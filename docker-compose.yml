@@ -15,7 +15,7 @@ services:
       - ./frontend:/usr/share/nginx/html:ro
     networks:
       - cloudops
-    read_only: true
+    #read_only: true
     tmpfs:
       - /var/run
       - /var/cache/nginx
@@ -48,7 +48,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /app/data
+     # - /app/data
 
 
 volumes:

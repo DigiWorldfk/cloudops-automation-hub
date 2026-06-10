@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 import pyotp
 
 SECRET_KEY   = os.getenv("JWT_SECRET", "change-me-in-production-minimum-64-chars-xxxxxxxxxxxxxxxxxxxx")
@@ -16,11 +16,8 @@ ADMIN_PASS_HASH   = os.getenv("ADMIN_PASS_HASH", "")
 TOTP_SECRET       = os.getenv("TOTP_SECRET", "")
 ADMIN_ROLE        = os.getenv("ADMIN_ROLE", "admin")
 
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_ctx.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 def verify_totp(code: str) -> bool:
     if not TOTP_SECRET:
