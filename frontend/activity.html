@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Activity Log — CloudOps Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">📋 Activity Log</span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="loadActivity()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="page">
+      <div style="display:flex;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+        <input id="searchInput" class="form-control" style="width:220px" placeholder="Search action or resource…" oninput="filterRows()"/>
+        <select id="statusFilter" class="form-control" style="width:140px" onchange="filterRows()">
+          <option value="">All statuses</option>
+          <option value="OK">OK</option>
+          <option value="FAIL">FAIL</option>
+          <option value="STARTED">STARTED</option>
+        </select>
+        <span id="rowCount" style="color:var(--muted);font-size:.85rem"></span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Resource</th><th>Status</th><th>Detail</th></tr></thead>
+          <tbody id="actBody"><tr><td colspan="6" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:.75rem;align-items:center;margin-top:1rem">
+        <button class="btn btn-ghost btn-sm" id="prevBtn" onclick="prevPage()" disabled>‹ Prev</button>
+        <span id="pageInfo" style="color:var(--muted);font-size:.85rem"></span>
+        <button class="btn btn-ghost btn-sm" id="nextBtn" onclick="nextPage()">Next ›</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="shared.js"></script>
+<script>
+let allRows = [], page = 0, pageSize = 50, total = 0;
+
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('activity.html');
+  await loadActivity();
+})();
+
+async function loadActivity() {
+  try {
+    const r = await api(`/activity?limit=${pageSize}&offset=${page * pageSize}`);
+    total   = r.total;
+    allRows = r.items;
+    renderRows(allRows);
+    document.getElementById('pageInfo').textContent = `Page ${page+1} of ${Math.ceil(total/pageSize)} (${total} total)`;
+    document.getElementById('prevBtn').disabled = page === 0;
+    document.getElementById('nextBtn').disabled = (page+1)*pageSize >= total;
+  } catch(e) {}
+}
+
+function renderRows(rows) {
+  const tbody = document.getElementById('actBody');
+  document.getElementById('rowCount').textContent = `${rows.length} rows`;
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center">No activity yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td style="white-space:nowrap;color:var(--muted);font-size:.8rem">${new Date(r.timestamp).toLocaleString()}</td>
+    <td>${r.user}</td>
+    <td><code style="font-size:.78rem">${r.action}</code></td>
+    <td style="color:var(--muted);font-size:.85rem">${r.resource}</td>
+    <td>${badge(r.status)}</td>
+    <td style="color:var(--muted);font-size:.78rem;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.detail||''}">${r.detail||'—'}</td>
+  </tr>`).join('');
+}
+
+function filterRows() {
+  const q  = document.getElementById('searchInput').value.toLowerCase();
+  const st = document.getElementById('statusFilter').value.toUpperCase();
+  const filtered = allRows.filter(r =>
+    (!q  || r.action.toLowerCase().includes(q) || r.resource.toLowerCase().includes(q)) &&
+    (!st || r.status.toUpperCase() === st)
+  );
+  renderRows(filtered);
+}
+
+function prevPage() { if (page > 0) { page--; loadActivity(); } }
+function nextPage() { if ((page+1)*pageSize < total) { page++; loadActivity(); } }
+</script>
+</body>
+</html>

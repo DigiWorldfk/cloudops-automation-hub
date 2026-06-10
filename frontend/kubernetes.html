@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Kubernetes — CloudOps Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">☸️ Kubernetes</span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="loadAll()">↻ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="openHelmInstall()">🪖 Helm Install</button>
+      </div>
+    </div>
+    <div class="page">
+      <div id="alertBox" class="alert"></div>
+
+      <!-- Namespace selector -->
+      <div style="display:flex;gap:.75rem;align-items:center;margin-bottom:1rem">
+        <label style="font-size:.85rem;color:var(--muted)">Namespace:</label>
+        <select id="nsSelect" class="form-control" style="width:200px" onchange="loadPodsAndDeps()">
+          <option value="default">default</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="openCreateNS()">+ Namespace</button>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;gap:.5rem;margin-bottom:1rem">
+        <button class="btn btn-outline btn-sm" onclick="showTab('pods')">Pods</button>
+        <button class="btn btn-ghost  btn-sm" onclick="showTab('deployments')">Deployments</button>
+        <button class="btn btn-ghost  btn-sm" onclick="showTab('helm')">Helm Releases</button>
+      </div>
+
+      <!-- Pods tab -->
+      <div id="tabPods">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Pod</th><th>Namespace</th><th>Status</th><th>Node</th><th>Ready</th><th>Actions</th></tr></thead>
+            <tbody id="podBody"><tr><td colspan="6" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Deployments tab -->
+      <div id="tabDeployments" style="display:none">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Namespace</th><th>Replicas</th><th>Ready</th><th>Image</th><th>Actions</th></tr></thead>
+            <tbody id="depBody"><tr><td colspan="6" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Helm tab -->
+      <div id="tabHelm" style="display:none">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Release</th><th>Namespace</th><th>Chart</th><th>Status</th><th>Revision</th><th>Actions</th></tr></thead>
+            <tbody id="helmBody"><tr><td colspan="6" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pod Log Modal -->
+<div class="modal-overlay" id="logModal">
+  <div class="modal" style="width:700px">
+    <div class="modal-header"><h3 id="logTitle">Pod Logs</h3><button class="modal-close" onclick="closeModal('logModal')">✕</button></div>
+    <div class="terminal" id="logContent"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('logModal')">Close</button></div>
+  </div>
+</div>
+
+<!-- Scale Modal -->
+<div class="modal-overlay" id="scaleModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Scale Deployment</h3><button class="modal-close" onclick="closeModal('scaleModal')">✕</button></div>
+    <input type="hidden" id="scale_ns"/><input type="hidden" id="scale_name"/>
+    <div class="form-group"><label>Replicas</label><input id="scale_replicas" type="number" min="0" max="100" class="form-control" value="2"/></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('scaleModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="scaleDeployment()">Scale</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Namespace Modal -->
+<div class="modal-overlay" id="nsModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Create Namespace</h3><button class="modal-close" onclick="closeModal('nsModal')">✕</button></div>
+    <div class="form-group"><label>Name</label><input id="ns_name" class="form-control" placeholder="my-namespace"/></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('nsModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="createNamespace()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Helm Install Modal -->
+<div class="modal-overlay" id="helmModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Helm Install</h3><button class="modal-close" onclick="closeModal('helmModal')">✕</button></div>
+    <div class="form-row">
+      <div class="form-group"><label>Chart</label><input id="helm_chart" class="form-control" placeholder="nginx"/></div>
+      <div class="form-group"><label>Release Name</label><input id="helm_release" class="form-control" placeholder="my-nginx"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Namespace</label><input id="helm_ns" class="form-control" value="default"/></div>
+      <div class="form-group"><label>Repo URL (optional)</label><input id="helm_repo" class="form-control" placeholder="https://charts.bitnami.com/bitnami"/></div>
+    </div>
+    <div class="form-group"><label>values.yaml (optional)</label><textarea id="helm_values" class="form-control" rows="4" placeholder="replicaCount: 2&#10;service:&#10;  type: ClusterIP"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('helmModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="helmInstall()">Install</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+const tabs = ['Pods','Deployments','Helm'];
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('kubernetes.html');
+  await loadNamespaces();
+  await loadAll();
+})();
+
+function showTab(tab) {
+  document.getElementById('tabPods').style.display        = tab==='pods'        ? '' : 'none';
+  document.getElementById('tabDeployments').style.display = tab==='deployments' ? '' : 'none';
+  document.getElementById('tabHelm').style.display        = tab==='helm'        ? '' : 'none';
+}
+
+async function loadNamespaces() {
+  try {
+    const data = await api('/k8s/namespaces');
+    const sel = document.getElementById('nsSelect');
+    sel.innerHTML = data.map(ns => `<option value="${ns.name}">${ns.name}</option>`).join('');
+  } catch(e) {}
+}
+
+async function loadAll() { await Promise.all([loadPodsAndDeps(), loadHelmReleases()]); }
+
+async function loadPodsAndDeps() {
+  const ns = document.getElementById('nsSelect').value;
+  await Promise.all([loadPods(ns), loadDeployments(ns)]);
+}
+
+async function loadPods(ns) {
+  try {
+    const data = await api(`/k8s/pods?namespace=${ns}`);
+    const tbody = document.getElementById('podBody');
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--muted);text-align:center">No pods in ${ns}</td></tr>`; return; }
+    tbody.innerHTML = data.map(p => `<tr>
+      <td><strong>${p.name}</strong></td>
+      <td style="color:var(--muted)">${p.namespace}</td>
+      <td>${badge(p.status)}</td>
+      <td style="color:var(--muted)">${p.node||'—'}</td>
+      <td>${p.ready ? '✅' : '❌'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="viewPodLogs('${p.namespace}','${p.name}')">📄 Logs</button></td>
+    </tr>`).join('');
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function loadDeployments(ns) {
+  try {
+    const data = await api(`/k8s/deployments?namespace=${ns}`);
+    const tbody = document.getElementById('depBody');
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--muted);text-align:center">No deployments in ${ns}</td></tr>`; return; }
+    tbody.innerHTML = data.map(d => `<tr>
+      <td><strong>${d.name}</strong></td>
+      <td style="color:var(--muted)">${d.namespace}</td>
+      <td>${d.replicas}</td>
+      <td>${d.ready??'—'}/${d.replicas}</td>
+      <td style="font-size:.78rem;color:var(--muted)">${(d.image||'').split('/').pop()}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="openScale('${d.namespace}','${d.name}',${d.replicas})">⇧ Scale</button></td>
+    </tr>`).join('');
+  } catch(e) {}
+}
+
+async function loadHelmReleases() {
+  const ns = document.getElementById('nsSelect').value;
+  try {
+    const data = await api(`/k8s/helm/releases?namespace=${ns}`);
+    const tbody = document.getElementById('helmBody');
+    if (!Array.isArray(data)||!data.length) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--muted);text-align:center">No Helm releases in ${ns}</td></tr>`; return; }
+    tbody.innerHTML = data.map(r => `<tr>
+      <td><strong>${r.name}</strong></td>
+      <td>${r.namespace}</td>
+      <td>${r.chart}</td>
+      <td>${badge(r.status)}</td>
+      <td>${r.revision}</td>
+      <td class="td-actions">
+        <button class="btn btn-warning btn-sm" onclick="helmRollback('${r.name}','${r.namespace}')">↩ Rollback</button>
+      </td>
+    </tr>`).join('');
+  } catch(e) {}
+}
+
+async function viewPodLogs(ns, pod) {
+  document.getElementById('logTitle').textContent = `Logs — ${pod}`;
+  document.getElementById('logContent').textContent = 'Loading…';
+  document.getElementById('logModal').classList.add('open');
+  try {
+    const r = await api(`/k8s/pods/${ns}/${pod}/logs?tail=200`);
+    document.getElementById('logContent').textContent = r.logs || '(no output)';
+  } catch(e) { document.getElementById('logContent').textContent = e.message; }
+}
+
+function openScale(ns, name, replicas) {
+  document.getElementById('scale_ns').value       = ns;
+  document.getElementById('scale_name').value     = name;
+  document.getElementById('scale_replicas').value = replicas;
+  document.getElementById('scaleModal').classList.add('open');
+}
+function openCreateNS()    { document.getElementById('nsModal').classList.add('open'); }
+function openHelmInstall() { document.getElementById('helmModal').classList.add('open'); }
+function closeModal(id)    { document.getElementById(id).classList.remove('open'); }
+
+async function scaleDeployment() {
+  const ns       = document.getElementById('scale_ns').value;
+  const name     = document.getElementById('scale_name').value;
+  const replicas = parseInt(document.getElementById('scale_replicas').value);
+  try {
+    await api(`/k8s/deployments/${ns}/${name}/scale`, { method: 'POST', body: JSON.stringify({ replicas }) });
+    closeModal('scaleModal');
+    showAlert('alertBox', `Scaled ${name} to ${replicas} replicas`, 'success');
+    setTimeout(() => loadDeployments(ns), 2000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function createNamespace() {
+  const name = document.getElementById('ns_name').value;
+  try {
+    await api('/k8s/namespaces', { method: 'POST', body: JSON.stringify({ name }) });
+    closeModal('nsModal');
+    showAlert('alertBox', `Namespace ${name} created`, 'success');
+    await loadNamespaces();
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function helmInstall() {
+  try {
+    await api('/k8s/helm/install', { method: 'POST', body: JSON.stringify({
+      chart:      document.getElementById('helm_chart').value,
+      release:    document.getElementById('helm_release').value,
+      namespace:  document.getElementById('helm_ns').value,
+      repo_url:   document.getElementById('helm_repo').value || null,
+      values_yaml: document.getElementById('helm_values').value || null,
+    })});
+    closeModal('helmModal');
+    showAlert('alertBox', 'Helm install initiated', 'success');
+    setTimeout(loadHelmReleases, 3000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function helmRollback(release, ns) {
+  try {
+    await api('/k8s/helm/rollback', { method: 'POST', body: JSON.stringify({ release, namespace: ns }) });
+    showAlert('alertBox', `Rollback initiated for ${release}`, 'success');
+    setTimeout(loadHelmReleases, 2000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+</script>
+</body>
+</html>

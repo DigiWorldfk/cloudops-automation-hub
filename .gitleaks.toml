@@ -1,0 +1,44 @@
+title = "CloudOps Automation Hub — Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id          = "azure-client-secret"
+description = "Azure Service Principal Client Secret"
+regex       = '''(?i)AZURE_CLIENT_SECRET\s*=\s*[^\s]{8,}'''
+tags        = ["azure", "credentials"]
+
+[[rules]]
+id          = "aws-secret-key"
+description = "AWS Secret Access Key"
+regex       = '''(?i)(AWS_SECRET_ACCESS_KEY|aws_secret)\s*=\s*[A-Za-z0-9/+=]{40}'''
+tags        = ["aws", "credentials"]
+
+[[rules]]
+id          = "jwt-secret"
+description = "JWT Secret Key"
+regex       = '''(?i)JWT_SECRET\s*=\s*[^\s]{16,}'''
+tags        = ["auth", "credentials"]
+
+[[rules]]
+id          = "totp-secret"
+description = "TOTP Secret"
+regex       = '''(?i)TOTP_SECRET\s*=\s*[A-Z2-7]{16,}'''
+tags        = ["auth", "2fa"]
+
+[allowlist]
+description = "Allowlist for placeholder values and examples"
+regexes = [
+  "change-me",
+  "xxxxxxxx",
+  "AKIA[0-9A-Z]{16}",           # placeholder format only
+  "YourPasswordHere",
+  "JBSWY3DPEHPK3PXP",           # example TOTP seed from docs
+  "AKIAxxxxxxxxxxxxxxxx",
+]
+paths = [
+  ".env.example",
+  "README.md",
+  "SECURITY.md",
+]

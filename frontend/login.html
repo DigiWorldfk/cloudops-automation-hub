@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudOps Hub — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg); }
+    .login-box {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 2.5rem; width: 380px; max-width: 95vw;
+    }
+    .login-logo { text-align: center; margin-bottom: 1.75rem; }
+    .login-logo .icon { font-size: 2.5rem; }
+    .login-logo h1 { font-size: 1.2rem; font-weight: 800; color: var(--accent); margin-top: .5rem; }
+    .login-logo p  { font-size: .8rem; color: var(--muted); }
+    .login-btn { width: 100%; padding: .75rem; font-size: .95rem; margin-top: .5rem; justify-content: center; }
+    .totp-hint { font-size: .75rem; color: var(--muted); margin-top: .35rem; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="icon">⚙️</div>
+      <h1>CloudOps Hub</h1>
+      <p>Self-Service Platform Engineering Portal</p>
+    </div>
+
+    <div id="alertBox" class="alert alert-danger"></div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input id="username" class="form-control" type="text" placeholder="admin" autocomplete="username" required />
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input id="password" class="form-control" type="password" placeholder="••••••••" autocomplete="current-password" required />
+      </div>
+      <div class="form-group">
+        <label for="totp">TOTP Code</label>
+        <input id="totp" class="form-control" type="text" placeholder="123456" maxlength="6" inputmode="numeric" pattern="\d{6}" required />
+        <p class="totp-hint">6-digit code from your authenticator app</p>
+      </div>
+      <button type="submit" class="btn btn-primary login-btn" id="loginBtn">Sign In</button>
+    </form>
+  </div>
+
+  <script>
+    const form    = document.getElementById('loginForm');
+    const alertBox = document.getElementById('alertBox');
+    const loginBtn = document.getElementById('loginBtn');
+
+    function showAlert(msg) {
+      alertBox.textContent = msg;
+      alertBox.classList.add('show');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.classList.remove('show');
+      loginBtn.disabled = true;
+      loginBtn.innerHTML = '<span class="spinner"></span> Signing in…';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username:  document.getElementById('username').value,
+            password:  document.getElementById('password').value,
+            totp_code: document.getElementById('totp').value,
+          }),
+        });
+        if (res.ok) {
+          window.location.href = '/dashboard.html';
+        } else {
+          const err = await res.json();
+          showAlert(err.detail || 'Authentication failed');
+        }
+      } catch {
+        showAlert('Network error — ensure the server is running');
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Docker — CloudOps Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">🐳 Docker</span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="loadAll()">↻ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="openPull()">⬇ Pull Image</button>
+      </div>
+    </div>
+    <div class="page">
+      <div id="alertBox" class="alert"></div>
+
+      <h2 style="font-size:.95rem;margin-bottom:.75rem">Containers</h2>
+      <div class="table-wrap" style="margin-bottom:1.5rem">
+        <table>
+          <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th>Actions</th></tr></thead>
+          <tbody id="containerBody"><tr><td colspan="5" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+
+      <h2 style="font-size:.95rem;margin-bottom:.75rem">Images</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tag</th><th>ID</th><th>Size</th></tr></thead>
+          <tbody id="imageBody"><tr><td colspan="3" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal-overlay" id="logModal">
+  <div class="modal" style="width:700px">
+    <div class="modal-header"><h3 id="logTitle">Container Logs</h3><button class="modal-close" onclick="closeModal('logModal')">✕</button></div>
+    <div class="terminal" id="logContent"></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('logModal')">Close</button></div>
+  </div>
+</div>
+
+<!-- Pull Modal -->
+<div class="modal-overlay" id="pullModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Pull Docker Image</h3><button class="modal-close" onclick="closeModal('pullModal')">✕</button></div>
+    <div class="form-group"><label>Image</label><input id="pull_image" class="form-control" placeholder="nginx:latest"/></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('pullModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="pullImage()">Pull</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('docker.html');
+  await loadAll();
+})();
+
+async function loadAll() {
+  await Promise.all([loadContainers(), loadImages()]);
+}
+
+async function loadContainers() {
+  try {
+    const data = await api('/docker/containers');
+    const tbody = document.getElementById('containerBody');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center">No containers</td></tr>'; return; }
+    tbody.innerHTML = data.map(c => {
+      const ports = c.ports ? Object.entries(c.ports).map(([k,v]) => v ? `${v[0].HostPort}→${k}` : k).join(', ') : '—';
+      return `<tr>
+        <td><strong>${c.name}</strong></td>
+        <td style="color:var(--muted)">${c.image}</td>
+        <td>${badge(c.status)}</td>
+        <td style="font-size:.78rem;color:var(--muted)">${ports}</td>
+        <td class="td-actions">
+          <button class="btn btn-success btn-sm" onclick="cAction('start','${c.id}')">▶</button>
+          <button class="btn btn-warning btn-sm" onclick="cAction('stop','${c.id}')">⏹</button>
+          <button class="btn btn-ghost btn-sm"   onclick="cAction('restart','${c.id}')">↻</button>
+          <button class="btn btn-ghost btn-sm"   onclick="viewLogs('${c.id}','${c.name}')">📄 Logs</button>
+          <button class="btn btn-danger btn-sm"  onclick="removeContainer('${c.id}')">🗑</button>
+        </td>
+      </tr>`;}).join('');
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function loadImages() {
+  try {
+    const data = await api('/docker/images');
+    const tbody = document.getElementById('imageBody');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center">No images</td></tr>'; return; }
+    tbody.innerHTML = data.map(img => `<tr>
+      <td>${img.tags.join(', ') || '<span style="color:var(--muted)">&lt;none&gt;</span>'}</td>
+      <td style="color:var(--muted);font-size:.78rem">${img.id}</td>
+      <td>${fmtBytes(img.size)}</td>
+    </tr>`).join('');
+  } catch(e) {}
+}
+
+async function cAction(action, id) {
+  try {
+    await api(`/docker/containers/${id}/${action}`, { method: 'POST' });
+    showAlert('alertBox', `${action} successful`, 'success');
+    setTimeout(loadContainers, 1000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function removeContainer(id) {
+  if (!confirm('Remove this container?')) return;
+  try {
+    await api(`/docker/containers/${id}`, { method: 'DELETE' });
+    showAlert('alertBox', 'Container removed', 'success');
+    loadContainers();
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function viewLogs(id, name) {
+  document.getElementById('logTitle').textContent = `Logs — ${name}`;
+  document.getElementById('logContent').textContent = 'Loading…';
+  document.getElementById('logModal').classList.add('open');
+  try {
+    const r = await api(`/docker/containers/${id}/logs?tail=200`);
+    document.getElementById('logContent').textContent = r.logs || '(no output)';
+  } catch(e) { document.getElementById('logContent').textContent = e.message; }
+}
+
+function openPull() { document.getElementById('pullModal').classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function pullImage() {
+  const image = document.getElementById('pull_image').value;
+  try {
+    await api('/docker/images/pull', { method: 'POST', body: JSON.stringify({ image }) });
+    closeModal('pullModal');
+    showAlert('alertBox', `Pulled ${image}`, 'success');
+    loadImages();
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AWS EC2 — CloudOps Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">🟠 AWS EC2 Instances</span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="loadInstances()">↻ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="openCreate()">+ Launch Instance</button>
+      </div>
+    </div>
+    <div class="page">
+      <div id="alertBox" class="alert"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Instance ID</th><th>Name</th><th>Type</th><th>State</th><th>AZ</th><th>Private IP</th><th>Public IP</th><th>Actions</th></tr></thead>
+          <tbody id="instanceBody"><tr><td colspan="8" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Launch Modal -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Launch EC2 Instance</h3><button class="modal-close" onclick="closeModal('createModal')">✕</button></div>
+    <div class="form-row">
+      <div class="form-group"><label>AMI ID</label><input id="ami_id" class="form-control" placeholder="ami-0abcdef1234567890"/></div>
+      <div class="form-group"><label>Instance Type</label><input id="inst_type" class="form-control" value="t3.micro"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Subnet ID</label><input id="subnet_id" class="form-control" placeholder="subnet-xxxxx"/></div>
+      <div class="form-group"><label>Security Groups (comma-sep)</label><input id="sg_ids" class="form-control" placeholder="sg-xxxxx"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Key Pair Name</label><input id="key_name" class="form-control" placeholder="my-key (optional)"/></div>
+      <div class="form-group"><label>Name Tag</label><input id="name_tag" class="form-control" placeholder="my-server"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('createModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="launchInstance()">Launch</button>
+    </div>
+  </div>
+</div>
+
+<!-- Resize Modal -->
+<div class="modal-overlay" id="resizeModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Resize Instance</h3><button class="modal-close" onclick="closeModal('resizeModal')">✕</button></div>
+    <input type="hidden" id="resize_id"/>
+    <div class="form-group"><label>New Instance Type</label><input id="resize_type" class="form-control" placeholder="t3.medium"/></div>
+    <div class="alert alert-warning show" style="margin-bottom:0">⚠️ This will stop and restart the instance.</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('resizeModal')">Cancel</button>
+      <button class="btn btn-warning" onclick="resizeInstance()">Resize</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('aws.html');
+  await loadInstances();
+})();
+
+async function loadInstances() {
+  try {
+    const data = await api('/aws/instances');
+    const tbody = document.getElementById('instanceBody');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center">No instances found — check AWS credentials</td></tr>'; return; }
+    tbody.innerHTML = data.map(i => `
+      <tr>
+        <td><code style="font-size:.78rem">${i.instance_id}</code></td>
+        <td><strong>${i.name||'—'}</strong></td>
+        <td>${i.instance_type}</td>
+        <td>${badge(i.state)}</td>
+        <td style="color:var(--muted)">${i.availability_zone}</td>
+        <td style="color:var(--muted)">${i.private_ip||'—'}</td>
+        <td style="color:var(--muted)">${i.public_ip||'—'}</td>
+        <td class="td-actions">
+          <button class="btn btn-success btn-sm" onclick="action('start','${i.instance_id}')">▶</button>
+          <button class="btn btn-warning btn-sm" onclick="action('stop','${i.instance_id}')">⏹</button>
+          <button class="btn btn-ghost btn-sm"   onclick="openResize('${i.instance_id}')">⇧</button>
+          <button class="btn btn-ghost btn-sm"   onclick="action('snapshot','${i.instance_id}')">📸</button>
+          <button class="btn btn-ghost btn-sm"   onclick="patchInstance('${i.instance_id}')">🩹 Patch</button>
+          <button class="btn btn-danger btn-sm"  onclick="terminate('${i.instance_id}')">🗑</button>
+        </td>
+      </tr>`).join('');
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function action(act, id) {
+  try {
+    await api(`/aws/instances/${id}/${act}`, { method: 'POST' });
+    showAlert('alertBox', `${act} initiated for ${id}`, 'success');
+    setTimeout(loadInstances, 2000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function terminate(id) {
+  if (!confirm(`Terminate ${id}? This is irreversible.`)) return;
+  try {
+    await api(`/aws/instances/${id}`, { method: 'DELETE' });
+    showAlert('alertBox', `Termination initiated for ${id}`, 'success');
+    setTimeout(loadInstances, 2000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function patchInstance(id) {
+  try {
+    const r = await api(`/aws/instances/${id}/patch`, { method: 'POST' });
+    showAlert('alertBox', `Patch initiated — command ID: ${r.command_id}`, 'success');
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+function openCreate() { document.getElementById('createModal').classList.add('open'); }
+function openResize(id) { document.getElementById('resize_id').value = id; document.getElementById('resizeModal').classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function launchInstance() {
+  const sgs = document.getElementById('sg_ids').value.split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    const r = await api('/aws/instances', { method: 'POST', body: JSON.stringify({
+      ami_id: document.getElementById('ami_id').value,
+      instance_type: document.getElementById('inst_type').value,
+      subnet_id: document.getElementById('subnet_id').value,
+      security_group_ids: sgs,
+      key_name: document.getElementById('key_name').value || null,
+      name_tag: document.getElementById('name_tag').value,
+    })});
+    closeModal('createModal');
+    showAlert('alertBox', `Instance ${r.instance_id} launching`, 'success');
+    setTimeout(loadInstances, 3000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function resizeInstance() {
+  const id   = document.getElementById('resize_id').value;
+  const type = document.getElementById('resize_type').value;
+  try {
+    await api(`/aws/instances/${id}/resize`, { method: 'POST', body: JSON.stringify({ instance_type: type }) });
+    closeModal('resizeModal');
+    showAlert('alertBox', `Resize initiated for ${id}`, 'success');
+    setTimeout(loadInstances, 5000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Dashboard — CloudOps Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">📊 Dashboard</span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="loadSummary()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="page">
+      <div class="page-header">
+        <h1>Infrastructure Overview</h1>
+        <p>Real-time summary across all connected providers</p>
+      </div>
+
+      <div class="stat-grid" id="statGrid">
+        <div class="stat-card azure"><div class="label">Azure VMs</div><div class="value" id="azureCount">—</div><div class="sub" id="azureErr"></div></div>
+        <div class="stat-card aws">  <div class="label">AWS Instances</div><div class="value" id="awsCount">—</div><div class="sub" id="awsErr"></div></div>
+        <div class="stat-card docker"><div class="label">Containers</div><div class="value" id="dockerCount">—</div><div class="sub" id="dockerRunning"></div></div>
+        <div class="stat-card"><div class="label">Activity Events</div><div class="value" id="activityCount">—</div><div class="sub">today</div></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 style="font-size:.95rem">Recent Activity</h3>
+          <a href="activity.html" class="btn btn-ghost btn-sm">View all</a>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Status</th></tr></thead>
+            <tbody id="activityBody"><tr><td colspan="5" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem">
+        <div class="card">
+          <h3 style="font-size:.95rem;margin-bottom:.75rem">Quick Actions</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+            <a href="azure.html"     class="btn btn-outline btn-sm">🔵 Azure VMs</a>
+            <a href="aws.html"       class="btn btn-outline btn-sm">🟠 AWS EC2</a>
+            <a href="docker.html"    class="btn btn-outline btn-sm">🐳 Docker</a>
+            <a href="kubernetes.html" class="btn btn-outline btn-sm">☸️ Kubernetes</a>
+            <a href="terraform.html" class="btn btn-outline btn-sm">🏗️ Terraform</a>
+          </div>
+        </div>
+        <div class="card">
+          <h3 style="font-size:.95rem;margin-bottom:.75rem">API Docs</h3>
+          <p style="font-size:.85rem;color:var(--muted);margin-bottom:.75rem">Interactive OpenAPI documentation for all endpoints.</p>
+          <a href="/api/docs" target="_blank" class="btn btn-ghost btn-sm">Open Swagger UI ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('dashboard.html');
+  await loadSummary();
+})();
+
+async function loadSummary() {
+  try {
+    const data = await api('/dashboard/summary');
+    document.getElementById('azureCount').textContent  = data.azure_vms.count;
+    document.getElementById('awsCount').textContent    = data.aws_instances.count;
+    document.getElementById('dockerCount').textContent = data.docker_containers.count;
+    document.getElementById('dockerRunning').textContent = `${data.docker_containers.running} running`;
+    if (data.azure_vms.error)  document.getElementById('azureErr').textContent  = '⚠ ' + data.azure_vms.error.substring(0,40);
+    if (data.aws_instances.error) document.getElementById('awsErr').textContent = '⚠ ' + data.aws_instances.error.substring(0,40);
+
+    const rows = data.recent_activity;
+    document.getElementById('activityCount').textContent = rows.length;
+    const tbody = document.getElementById('activityBody');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center">No activity yet</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td style="white-space:nowrap;color:var(--muted);font-size:.8rem">${new Date(r.timestamp).toLocaleString()}</td>
+        <td>${r.user}</td>
+        <td><code style="font-size:.8rem">${r.action}</code></td>
+        <td style="color:var(--muted)">${r.resource}</td>
+        <td>${badge(r.status)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    console.error(e);
+  }
+}
+</script>
+</body>
+</html>

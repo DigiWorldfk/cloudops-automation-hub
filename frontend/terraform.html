@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Terraform — CloudOps Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Fira+Code:wght@400&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">🏗️ Terraform</span>
+    </div>
+    <div class="page">
+      <div id="alertBox" class="alert"></div>
+
+      <div style="display:flex;gap:1rem;align-items:flex-end;margin-bottom:1.5rem;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:200px">
+          <label>Workspace</label>
+          <select id="workspaceSelect" class="form-control" onchange="clearOutput()">
+            <option value="">— select workspace —</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-ghost    btn-sm" onclick="tfAction('init')">⚙ Init</button>
+          <button class="btn btn-outline  btn-sm" onclick="tfPlan()">🔍 Plan</button>
+          <button class="btn btn-success  btn-sm" onclick="tfApply()">✅ Apply</button>
+          <button class="btn btn-danger   btn-sm" onclick="tfDestroy()">💣 Destroy</button>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <span style="font-size:.85rem;color:var(--muted)">Output</span>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('output').textContent=''">Clear</button>
+      </div>
+      <div class="terminal terminal-cursor" id="output">Select a workspace and run a command…</div>
+
+      <div style="margin-top:1rem">
+        <h3 style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem">AVAILABLE WORKSPACES</h3>
+        <div id="workspaceList" style="display:flex;flex-wrap:wrap;gap:.5rem"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="shared.js"></script>
+<script>
+const output = document.getElementById('output');
+
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('terraform.html');
+  await loadWorkspaces();
+})();
+
+async function loadWorkspaces() {
+  try {
+    const r = await api('/terraform/workspaces');
+    const sel  = document.getElementById('workspaceSelect');
+    const list = document.getElementById('workspaceList');
+    sel.innerHTML  = '<option value="">— select workspace —</option>' +
+      r.workspaces.map(w => `<option value="${w}">${w}</option>`).join('');
+    list.innerHTML = r.workspaces.length
+      ? r.workspaces.map(w => `<span class="badge badge-pending" style="cursor:pointer" onclick="document.getElementById('workspaceSelect').value='${w}'">${w}</span>`).join('')
+      : '<span style="color:var(--muted);font-size:.85rem">No workspaces found in /app/terraform-workspaces/</span>';
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+function getWorkspace() {
+  const ws = document.getElementById('workspaceSelect').value;
+  if (!ws) { showAlert('alertBox', 'Select a workspace first'); return null; }
+  return ws;
+}
+
+function clearOutput() { output.textContent = ''; }
+function appendOutput(text) { output.textContent += text; output.scrollTop = output.scrollHeight; }
+
+async function tfAction(action) {
+  const ws = getWorkspace(); if (!ws) return;
+  output.textContent = `$ terraform ${action}\n`;
+  try {
+    const r = await api(`/terraform/${action}`, { method: 'POST', body: JSON.stringify({ workspace: ws }) });
+    appendOutput(r.stdout || '');
+    if (r.returncode !== 0) appendOutput('\n\n❌ Exit code: ' + r.returncode + '\n' + (r.stderr||''));
+    else appendOutput('\n✅ Done');
+  } catch(e) { appendOutput('\n❌ ' + e.message); }
+}
+
+async function tfPlan() {
+  const ws = getWorkspace(); if (!ws) return;
+  output.textContent = `$ terraform plan\n`;
+  try {
+    const res = await fetch('/api/terraform/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: ws }),
+    });
+    if (res.status === 401) { window.location.href = '/login.html'; return; }
+    if (!res.ok) { const e = await res.json(); appendOutput('\n❌ ' + (e.detail||res.statusText)); return; }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value);
+      chunk.split('\n').forEach(line => {
+        if (line.startsWith('data: ')) {
+          const text = line.slice(6);
+          if (text !== '[DONE]') appendOutput(text);
+        }
+      });
+    }
+  } catch(e) { appendOutput('\n❌ ' + e.message); }
+}
+
+async function tfApply() {
+  const ws = getWorkspace(); if (!ws) return;
+  if (!confirm(`Apply Terraform in workspace "${ws}"?\nThis will CREATE/MODIFY/DESTROY real infrastructure.`)) return;
+  output.textContent = `$ terraform apply\n`;
+  try {
+    const r = await api('/terraform/apply', { method: 'POST', body: JSON.stringify({ workspace: ws, confirm: true }) });
+    appendOutput(r.stdout || '');
+    if (r.returncode !== 0) appendOutput('\n\n❌ ' + (r.stderr||''));
+    else appendOutput('\n✅ Apply complete');
+  } catch(e) { appendOutput('\n❌ ' + e.message); }
+}
+
+async function tfDestroy() {
+  const ws = getWorkspace(); if (!ws) return;
+  const confirm1 = confirm(`DESTROY workspace "${ws}"?\nThis will DESTROY all infrastructure in this workspace.`);
+  if (!confirm1) return;
+  const confirm2 = prompt(`Type the workspace name "${ws}" to confirm destroy:`);
+  if (confirm2 !== ws) { showAlert('alertBox', 'Destroy cancelled — workspace name mismatch', 'warning'); return; }
+  output.textContent = `$ terraform destroy\n`;
+  try {
+    const r = await api('/terraform/destroy', { method: 'POST', body: JSON.stringify({ workspace: ws, confirm: true, destroy: true }) });
+    appendOutput(r.stdout || '');
+    if (r.returncode !== 0) appendOutput('\n\n❌ ' + (r.stderr||''));
+    else appendOutput('\n✅ Destroy complete');
+  } catch(e) { appendOutput('\n❌ ' + e.message); }
+}
+</script>
+</body>
+</html>

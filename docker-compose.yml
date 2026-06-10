@@ -1,0 +1,60 @@
+services:
+
+  # ── nginx (reverse proxy + WAF + static frontend) ────────────────────────
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    networks:
+      - cloudops
+    read_only: true
+    tmpfs:
+      - /var/run
+      - /var/cache/nginx
+      - /tmp
+
+  # ── FastAPI backend ────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: .env
+    expose:
+      - "8000"
+    depends_on: []
+    restart: unless-stopped
+    volumes:
+      - cloudops_data:/app/data
+      - terraform_workspaces:/app/terraform-workspaces
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker operations
+      # Uncomment to enable Kubernetes access via kubeconfig:
+      # - ~/.kube/config:/root/.kube/config:ro
+    networks:
+      - cloudops
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/data
+
+
+volumes:
+  cloudops_data:
+  terraform_workspaces:
+
+networks:
+  cloudops:
+    driver: bridge

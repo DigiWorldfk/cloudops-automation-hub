@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Azure VMs — CloudOps Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title">🔵 Azure Virtual Machines</span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="loadVMs()">↻ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="openCreateModal()">+ Create VM</button>
+      </div>
+    </div>
+    <div class="page">
+      <div id="alertBox" class="alert"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Resource Group</th><th>Location</th><th>Size</th><th>OS</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="vmBody"><tr><td colspan="7" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create VM Modal -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Create Azure VM</h3>
+      <button class="modal-close" onclick="closeModal('createModal')">✕</button>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>VM Name</label><input id="vm_name" class="form-control" placeholder="my-vm"/></div>
+      <div class="form-group"><label>Resource Group</label><input id="vm_rg" class="form-control" placeholder="my-rg"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Location</label><input id="vm_location" class="form-control" value="eastus"/></div>
+      <div class="form-group"><label>VM Size</label><input id="vm_size" class="form-control" value="Standard_B2s"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Admin Username</label><input id="vm_admin" class="form-control" value="azureuser"/></div>
+      <div class="form-group"><label>Admin Password</label><input id="vm_pass" class="form-control" type="password" placeholder="Min 12 chars"/></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('createModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="createVM()">Create VM</button>
+    </div>
+  </div>
+</div>
+
+<!-- Resize Modal -->
+<div class="modal-overlay" id="resizeModal">
+  <div class="modal">
+    <div class="modal-header"><h3>Resize VM</h3><button class="modal-close" onclick="closeModal('resizeModal')">✕</button></div>
+    <input type="hidden" id="resize_rg"/><input type="hidden" id="resize_name"/>
+    <div class="form-group"><label>New VM Size</label><input id="resize_size" class="form-control" placeholder="Standard_B4ms"/></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('resizeModal')">Cancel</button>
+      <button class="btn btn-warning" onclick="resizeVM()">Resize</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+let vms = [];
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('azure.html');
+  await loadVMs();
+})();
+
+async function loadVMs() {
+  try {
+    vms = await api('/azure/vms');
+    renderVMs();
+  } catch (e) { showAlert('alertBox', e.message); }
+}
+
+function renderVMs() {
+  const tbody = document.getElementById('vmBody');
+  if (!vms.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center">No VMs found — check Azure credentials</td></tr>'; return; }
+  tbody.innerHTML = vms.map(vm => `
+    <tr>
+      <td><strong>${vm.name}</strong></td>
+      <td style="color:var(--muted)">${vm.resource_group}</td>
+      <td style="color:var(--muted)">${vm.location}</td>
+      <td><code style="font-size:.78rem">${vm.vm_size||'—'}</code></td>
+      <td>${vm.os_type||'—'}</td>
+      <td>${badge(vm.status)}</td>
+      <td class="td-actions">
+        <button class="btn btn-success btn-sm" onclick="vmAction('start','${vm.resource_group}','${vm.name}')">▶</button>
+        <button class="btn btn-warning btn-sm" onclick="vmAction('stop','${vm.resource_group}','${vm.name}')">⏹</button>
+        <button class="btn btn-ghost btn-sm"   onclick="openResize('${vm.resource_group}','${vm.name}')">⇧ Resize</button>
+        <button class="btn btn-ghost btn-sm"   onclick="vmAction('snapshot','${vm.resource_group}','${vm.name}')">📸</button>
+        <button class="btn btn-danger btn-sm"  onclick="confirmDelete('${vm.resource_group}','${vm.name}')">🗑</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function vmAction(action, rg, name) {
+  try {
+    await api(`/azure/vms/${rg}/${name}/${action}`, { method: 'POST' });
+    showAlert('alertBox', `${action} initiated for ${name}`, 'success');
+    setTimeout(loadVMs, 2000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function confirmDelete(rg, name) {
+  if (!confirm(`Delete VM "${name}" in "${rg}"? This is irreversible.`)) return;
+  try {
+    await api(`/azure/vms/${rg}/${name}`, { method: 'DELETE' });
+    showAlert('alertBox', `VM ${name} deleted`, 'success');
+    loadVMs();
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+async function createVM() {
+  try {
+    await api('/azure/vms', { method: 'POST', body: JSON.stringify({
+      name: document.getElementById('vm_name').value,
+      resource_group: document.getElementById('vm_rg').value,
+      location: document.getElementById('vm_location').value,
+      vm_size: document.getElementById('vm_size').value,
+      admin_username: document.getElementById('vm_admin').value,
+      admin_password: document.getElementById('vm_pass').value,
+    })});
+    closeModal('createModal');
+    showAlert('alertBox', 'VM creation initiated', 'success');
+    setTimeout(loadVMs, 3000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+
+function openCreateModal()  { document.getElementById('createModal').classList.add('open'); }
+function openResize(rg, name) {
+  document.getElementById('resize_rg').value   = rg;
+  document.getElementById('resize_name').value = name;
+  document.getElementById('resizeModal').classList.add('open');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+async function resizeVM() {
+  const rg   = document.getElementById('resize_rg').value;
+  const name = document.getElementById('resize_name').value;
+  const size = document.getElementById('resize_size').value;
+  try {
+    await api(`/azure/vms/${rg}/${name}/resize`, { method: 'POST', body: JSON.stringify({ vm_size: size }) });
+    closeModal('resizeModal');
+    showAlert('alertBox', `Resize initiated for ${name}`, 'success');
+    setTimeout(loadVMs, 2000);
+  } catch(e) { showAlert('alertBox', e.message); }
+}
+</script>
+</body>
+</html>
