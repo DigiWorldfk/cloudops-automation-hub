@@ -14,7 +14,7 @@
     <div class="topbar">
       <span class="topbar-title">📊 Dashboard</span>
       <div class="topbar-actions">
-        <button class="btn btn-ghost btn-sm" onclick="loadSummary()">↻ Refresh</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadSummary();loadContainers()">↻ Refresh</button>
       </div>
     </div>
     <div class="page">
@@ -41,6 +41,37 @@
             <tbody id="activityBody"><tr><td colspan="5" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Docker Containers Panel -->
+      <div class="card" style="margin-top:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 style="font-size:.95rem">🐳 Docker Containers</h3>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <label style="font-size:.8rem;color:var(--muted);display:flex;align-items:center;gap:.4rem;cursor:pointer">
+              <input type="checkbox" id="showAll" onchange="loadContainers()" checked style="cursor:pointer"/> Show stopped
+            </label>
+            <button class="btn btn-ghost btn-sm" onclick="loadContainers()">↻ Refresh</button>
+            <a href="docker.html" class="btn btn-ghost btn-sm">Full view ↗</a>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Image</th>
+                <th>Status</th>
+                <th>Ports</th>
+                <th style="text-align:center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="containerBody">
+              <tr><td colspan="5" style="color:var(--muted);text-align:center">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="containerAlert"></div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem">
@@ -70,7 +101,7 @@
   const user = await authGuard();
   if (!user) return;
   document.getElementById('sidebarMount').innerHTML = buildSidebar('dashboard.html');
-  await loadSummary();
+  await Promise.all([loadSummary(), loadContainers()]);
 })();
 
 async function loadSummary() {
@@ -97,6 +128,59 @@ async function loadSummary() {
       </tr>`).join('');
   } catch (e) {
     console.error(e);
+  }
+}
+
+async function loadContainers() {
+  const all = document.getElementById('showAll').checked;
+  const tbody = document.getElementById('containerBody');
+  tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center">Loading…</td></tr>';
+  try {
+    const containers = await api(`/docker/containers?all=${all}`);
+    if (!containers.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center">No containers found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = containers.map(c => {
+      const isRunning = (c.status || '').toLowerCase().startsWith('up');
+      const name = (c.name || (c.names && c.names[0]) || c.id || '').replace(/^\//, '');
+      const imgShort = (c.image || '').split('/').pop().substring(0, 35);
+      const ports = c.ports
+        ? Object.entries(c.ports).filter(([,v]) => v && v.length).map(([k,v]) => `${v[0].HostPort}→${k.split('/')[0]}`).slice(0,2).join(', ')
+        : '—';
+      const statusBadge = isRunning
+        ? `<span style="display:inline-block;padding:.2rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600;background:#22c55e20;color:#22c55e">running</span>`
+        : `<span style="display:inline-block;padding:.2rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600;background:#64748b20;color:#64748b">stopped</span>`;
+      return `<tr>
+        <td style="font-weight:500">${name}</td>
+        <td style="font-size:.8rem;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.image}">${imgShort}</td>
+        <td>${statusBadge}</td>
+        <td style="font-size:.8rem;color:var(--muted)">${ports}</td>
+        <td style="text-align:center;white-space:nowrap">
+          ${isRunning
+            ? `<button class="btn btn-sm" style="background:#f59e0b;color:#000;margin-right:.3rem" onclick="containerAction('${c.id}','stop','${name}')">⏹ Stop</button>
+               <button class="btn btn-sm" style="background:#3b82f6;color:#fff" onclick="containerAction('${c.id}','restart','${name}')">↻ Restart</button>`
+            : `<button class="btn btn-sm" style="background:#22c55e;color:#000" onclick="containerAction('${c.id}','start','${name}')">▶ Start</button>`
+          }
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--danger,#ef4444);text-align:center">Failed to load containers: ${e.message}</td></tr>`;
+  }
+}
+
+async function containerAction(id, action, name) {
+  const alertEl = document.getElementById('containerAlert');
+  const colors  = { start:'#22c55e', stop:'#f59e0b', restart:'#3b82f6' };
+  const labels  = { start:'Starting', stop:'Stopping', restart:'Restarting' };
+  alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid ${colors[action]};background:${colors[action]}18;font-size:.85rem">${labels[action]} <strong>${name}</strong>…</div>`;
+  try {
+    await api(`/docker/containers/${id}/${action}`, { method: 'POST' });
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #22c55e;background:#22c55e18;font-size:.85rem"><strong>${name}</strong> ${action}ed successfully.</div>`;
+    setTimeout(() => { alertEl.innerHTML = ''; loadContainers(); loadSummary(); }, 1200);
+  } catch (e) {
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #ef4444;background:#ef444418;font-size:.85rem">Failed to ${action} <strong>${name}</strong>: ${e.message}</div>`;
   }
 }
 </script>
