@@ -121,6 +121,36 @@ All action buttons show a **hover tooltip** with the target resource name.
 
 ---
 
+### 🤖 AI Agent (`/agent.html`)
+An AI-powered Platform Engineering Assistant backed by **GPT-4o** (Azure OpenAI or OpenAI direct) with **OpenAI function calling** and **Server-Sent Events** streaming.
+
+| Feature | Detail |
+|---|---|
+| **Natural language queries** | Ask about your infra in plain English — the agent picks the right tool and runs it |
+| **24 built-in tools** | Docker · Kubernetes · Azure VMs · AWS EC2 · Helm · Activity log |
+| **Risk-tiered execution** | 🟢 Green = auto-execute · 🟡 Amber = approval required · 🔴 Red = approval required |
+| **Approval workflow** | Risky actions queued to DB — admin approves or denies from the same page |
+| **Streaming responses** | Tokens stream in real-time via SSE — no waiting for full response |
+| **Tool call cards** | Every tool call shown inline with name, args, and tier badge |
+| **Conversation memory** | Last 40 messages kept as context for multi-turn conversations |
+| **Audit logging** | Every AI action written to the activity log with `triggered_by: ai_agent` |
+
+#### Risk Tiers
+| Tier | Examples | Needs Approval? |
+|---|---|---|
+| 🟢 **Green** | list containers, get logs, list pods, show costs, cluster info | No — runs immediately |
+| 🟡 **Amber** | start/stop container, scale deployment, cordon node, start/stop VM | Yes — admin approves |
+| 🔴 **Red** | drain node | Yes — admin approves |
+
+#### Example prompts
+- *"List all running Docker containers"*
+- *"Show all pods in the cloudops-test namespace"*
+- *"What are our AWS costs for the last 30 days?"*
+- *"Scale the demo-web deployment to 3 replicas"*
+- *"Cordon node worker-1 before maintenance"*
+
+---
+
 ## 🏗️ Architecture
 
 ```
@@ -138,6 +168,11 @@ nginx 1.27-alpine (port 80)
        DefaultAzureCredential     IAM env vars     /var/run/docker.sock  KUBECONFIG
               │
        subprocess → terraform | kubectl | helm
+              │
+              ▼
+       Azure OpenAI / OpenAI
+       GPT-4o function calling
+       24 tools · approval queue → SQLite
 ```
 
 ---
@@ -264,6 +299,39 @@ The workspace will appear in the Terraform dropdown on `/terraform.html`.
 
 ---
 
+### 9. (Optional) Enable the AI Agent
+
+The AI Agent works with either **Azure OpenAI** (recommended) or **OpenAI direct**.
+
+**Option A — Azure AI Foundry (GPT-4o deployment):**
+1. Go to **https://ai.azure.com** → open your project
+2. Left sidebar → **Models + endpoints** → **+ Deploy model** → **Deploy base model**
+3. Search `gpt-4o` → deployment name: `gpt-4o` → **Deploy** (wait ~1 min for Succeeded)
+4. Copy the project endpoint and API key, then add to `.env`:
+```
+AZURE_OPENAI_ENDPOINT=https://<hub>.services.ai.azure.com/api/projects/<project-name>
+AZURE_OPENAI_KEY=<your-key>
+AZURE_OPENAI_DEPLOYMENT=gpt-4o
+AZURE_OPENAI_API_VERSION=2024-10-21
+```
+
+**Option B — OpenAI direct:**
+1. Get an API key at **https://platform.openai.com/api-keys** (requires billing credit)
+2. Add to `.env`:
+```
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o
+```
+
+Then rebuild and restart:
+```bash
+docker compose up -d --build backend
+```
+
+Open **http://localhost/agent.html** and try *"List all running Docker containers"*.
+
+---
+
 ## 🔒 Security Model
 
 | Layer | Control |
@@ -295,6 +363,7 @@ FastAPI generates interactive docs at **http://localhost/api/docs**
 | `/api/k8s` | Namespaces · Pods · Pod logs · Deployments · Scale · Patch resources · Cluster info · Cluster versions · Node cordon/uncordon/drain · Cluster upgrade · Helm: list/install/upgrade/rollback |
 | `/api/terraform` | list-workspaces · init · plan (SSE) · apply · destroy |
 | `/api/activity` | `GET /` paginated · `GET /export` CSV |
+| `/api/ai` | `POST /chat` (SSE streaming) · `GET /approvals` · `POST /approvals/{id}/approve` · `POST /approvals/{id}/deny` |
 
 ---
 
@@ -325,23 +394,26 @@ cloudops-automation-hub/
 │   │   ├── docker_ops.py          # Docker container/image operations
 │   │   ├── kubernetes_ops.py      # K8s + Helm + cluster/node management
 │   │   ├── terraform.py           # Terraform runner with SSE streaming
-│   │   └── activity.py            # Audit log
+│   │   ├── activity.py            # Audit log
+│   │   └── ai_agent.py            # AI chat (SSE) + approval queue endpoints
 │   ├── services/
 │   │   ├── azure_client.py        # azure-mgmt-compute/network
 │   │   ├── aws_client.py          # boto3 EC2 + SSM + Cost Explorer
 │   │   ├── docker_client.py       # docker SDK via socket
 │   │   ├── k8s_client.py          # kubernetes Python client + kubectl subprocess
-│   │   └── terraform_runner.py    # async subprocess + SSE generator
+│   │   ├── terraform_runner.py    # async subprocess + SSE generator
+│   │   └── ai_tools.py            # 24-tool registry with risk tiers + executors
 │   ├── auth/
 │   │   ├── jwt_handler.py         # bcrypt verify + TOTP verify + JWT encode/decode
 │   │   └── dependencies.py        # FastAPI dependency injection for auth/RBAC
-│   ├── db/database.py             # aiosqlite activity log
+│   ├── db/database.py             # aiosqlite — activity_log + ai_approvals tables
 │   └── models/schemas.py          # Pydantic request/response models
 └── frontend/
     ├── style.css                  # Dark theme (#0a0f1a bg · #3b82f6 accent)
-    ├── shared.js                  # authGuard · buildSidebar · api() helper · badge()
+    ├── shared.js                  # authGuard · buildSidebar · api() · badge()
     ├── login.html                 # TOTP 2FA login form
-    ├── dashboard.html             # Overview + Docker controls + K8s controls + Cluster panel
+    ├── dashboard.html             # Overview + Docker + K8s + Cluster panels + logout
+    ├── agent.html                 # AI Agent — streaming chat + approval queue
     ├── azure.html                 # Azure VM CRUD
     ├── aws.html                   # AWS EC2 CRUD
     ├── docker.html                # Full Docker management
@@ -371,18 +443,26 @@ See [`.env.example`](.env.example) for the full list with generation commands.
 | `AWS_DEFAULT_REGION` | AWS | e.g. `us-east-1` |
 | `KUBECONFIG` | K8s | Path inside container — default `/app/kubeconfig.yaml` |
 | `DB_PATH` | Optional | SQLite path — default `/app/data/cloudops.db` |
+| `AZURE_OPENAI_ENDPOINT` | AI Agent | Azure AI Foundry project endpoint |
+| `AZURE_OPENAI_KEY` | AI Agent | Azure OpenAI API key |
+| `AZURE_OPENAI_DEPLOYMENT` | AI Agent | Deployment name — e.g. `gpt-4o` |
+| `AZURE_OPENAI_API_VERSION` | AI Agent | e.g. `2024-10-21` |
+| `OPENAI_API_KEY` | AI Agent | OpenAI direct API key (alternative to Azure) |
+| `OPENAI_MODEL` | AI Agent | Model name — e.g. `gpt-4o` |
 
 ---
 
 ## 🗺️ Roadmap
 
-| Phase | Feature |
-|---|---|
-| **Phase 4** | RBAC approval workflow — engineer raises request · admin approves · action executes |
-| **Phase 4** | Cost dashboard with Chart.js trend graphs |
-| **Phase 5** | AI incident recommendations via Azure OpenAI |
-| **Phase 5** | ChatOps assistant — natural language → infrastructure action |
-| **Production** | HTTPS/TLS via Let's Encrypt · multi-user accounts · PostgreSQL · Prometheus metrics |
+| Phase | Status | Feature |
+|---|---|---|
+| **Phase 1** | ✅ Done | Core portal — Auth, Docker, Azure, AWS, K8s, Terraform, Activity log |
+| **Phase 2** | ✅ Done | Dashboard panels — Docker controls, K8s scale/resources, Cluster node ops |
+| **Phase 3** | ✅ Done | AI Agent — GPT-4o function calling, approval workflow, 24 tools, SSE streaming |
+| **Phase 4** | ⏳ Next | Cost dashboard with Chart.js trend graphs |
+| **Phase 4** | ⏳ Next | Watchdog — auto-detect CrashLoopBackOff, cost anomalies, alert + auto-remediate |
+| **Phase 5** | 🔮 Planned | Multi-user accounts with per-user RBAC and engineer approval flows |
+| **Production** | 🔮 Planned | HTTPS/TLS via Let's Encrypt · PostgreSQL · Prometheus metrics endpoint |
 
 ---
 
@@ -391,18 +471,4 @@ See [`.env.example`](.env.example) for the full list with generation commands.
 - [Azure AKS Enterprise Platform](../azure-aks-enterprise-platform/) — 9-module Terraform platform with private AKS, WAF, Key Vault
 - [AWS EKS Enterprise Platform](../aws-eks-enterprise-platform/) — 14-module Terraform platform with EKS, GuardDuty, Config rules
 - [DigiWorld Portfolio](https://digiworldfk.github.io/DigitalFreelanceWorld/) — Live portfolio site
-
-
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat&logo=fastapi&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)
-![Azure](https://img.shields.io/badge/Azure-%230072C6.svg?style=flat&logo=microsoftazure&logoColor=white)
-![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=flat&logo=amazon-aws&logoColor=white)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-%23326ce5.svg?style=flat&logo=kubernetes&logoColor=white)
-![Terraform](https://img.shields.io/badge/Terraform-%235835CC.svg?style=flat&logo=terraform&logoColor=white)
-![nginx](https://img.shields.io/badge/nginx-%23009639.svg?style=flat&logo=nginx&logoColor=white)
-
-A **self-service Platform Engineering Portal** for day-to-day CloudOps work across AWS, Azure, Docker, Kubernetes, and Terraform — all from a single hardened web dashboard.
-
-> **Flagship project demonstrating:** Platform Engineering · Cloud Automation · DevOps Tooling · FastAPI · Infrastructure as Code · Kubernetes Operations · Security-First Design
 
