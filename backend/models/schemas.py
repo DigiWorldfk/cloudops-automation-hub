@@ -115,6 +115,12 @@ class DockerPullRequest(BaseModel):
 class K8sScaleRequest(BaseModel):
     replicas: int = Field(..., ge=0, le=100)
 
+class K8sResourcePatchRequest(BaseModel):
+    cpu_request:    Optional[str] = None   # e.g. "100m"
+    cpu_limit:      Optional[str] = None   # e.g. "500m"
+    memory_request: Optional[str] = None   # e.g. "128Mi"
+    memory_limit:   Optional[str] = None   # e.g. "512Mi"
+
 class K8sNamespaceCreateRequest(BaseModel):
     name: str
 

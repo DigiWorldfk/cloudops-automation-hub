@@ -110,6 +110,70 @@
         <div id="containerAlert"></div>
       </div>
 
+      <!-- Kubernetes Deployments Panel -->
+      <div class="card" style="margin-top:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 style="font-size:.95rem">☸️ Kubernetes Deployments</h3>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <select id="k8sNs" onchange="loadDeployments()" style="background:#0f172a;color:#f1f5f9;border:1px solid #334155;border-radius:5px;padding:.25rem .5rem;font-size:.8rem;cursor:pointer">
+              <option value="cloudops-test">cloudops-test</option>
+              <option value="default">default</option>
+              <option value="kube-system">kube-system</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadDeployments()">↻ Refresh</button>
+            <a href="kubernetes.html" class="btn btn-ghost btn-sm">Full view ↗</a>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Deployment</th>
+                <th style="text-align:center">Replicas</th>
+                <th>CPU req / limit</th>
+                <th>Memory req / limit</th>
+                <th style="text-align:center">Scale</th>
+                <th style="text-align:center">Resources</th>
+              </tr>
+            </thead>
+            <tbody id="deploymentBody">
+              <tr><td colspan="6" style="color:var(--muted);text-align:center">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="deploymentAlert"></div>
+      </div>
+
+      <!-- Resource Edit Modal -->
+      <div id="resModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:1.5rem 2rem;width:100%;max-width:420px;box-shadow:0 8px 40px rgba(0,0,0,.5)">
+          <h3 style="margin:0 0 1rem;font-size:1rem">✏️ Edit Resources — <span id="resModalTitle" style="color:#3b82f6"></span></h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+            <label style="font-size:.8rem;color:var(--muted)">
+              CPU Request
+              <input id="resCpuReq" type="text" placeholder="e.g. 100m" style="width:100%;margin-top:.3rem;padding:.4rem .6rem;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#f1f5f9;font-size:.85rem">
+            </label>
+            <label style="font-size:.8rem;color:var(--muted)">
+              CPU Limit
+              <input id="resCpuLim" type="text" placeholder="e.g. 500m" style="width:100%;margin-top:.3rem;padding:.4rem .6rem;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#f1f5f9;font-size:.85rem">
+            </label>
+            <label style="font-size:.8rem;color:var(--muted)">
+              Memory Request
+              <input id="resMemReq" type="text" placeholder="e.g. 128Mi" style="width:100%;margin-top:.3rem;padding:.4rem .6rem;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#f1f5f9;font-size:.85rem">
+            </label>
+            <label style="font-size:.8rem;color:var(--muted)">
+              Memory Limit
+              <input id="resMemLim" type="text" placeholder="e.g. 512Mi" style="width:100%;margin-top:.3rem;padding:.4rem .6rem;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#f1f5f9;font-size:.85rem">
+            </label>
+          </div>
+          <p style="font-size:.75rem;color:var(--muted);margin:.75rem 0 1rem">Leave blank to keep existing value. CPU: <code>100m</code>=0.1 core. Memory: <code>Mi</code>=mebibytes.</p>
+          <div style="display:flex;gap:.5rem;justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" onclick="closeResModal()">Cancel</button>
+            <button class="btn btn-sm" style="background:#3b82f6;color:#fff" onclick="submitResources()">Apply</button>
+          </div>
+        </div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem">
         <div class="card">
           <h3 style="font-size:.95rem;margin-bottom:.75rem">Quick Actions</h3>
@@ -137,7 +201,7 @@
   const user = await authGuard();
   if (!user) return;
   document.getElementById('sidebarMount').innerHTML = buildSidebar('dashboard.html');
-  await Promise.all([loadSummary(), loadContainers()]);
+  await Promise.all([loadSummary(), loadContainers(), loadDeployments()]);
 })();
 
 async function loadSummary() {
@@ -217,6 +281,106 @@ async function containerAction(id, action, name) {
     setTimeout(() => { alertEl.innerHTML = ''; loadContainers(); loadSummary(); }, 1200);
   } catch (e) {
     alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #ef4444;background:#ef444418;font-size:.85rem">Failed to ${action} <strong>${name}</strong>: ${e.message}</div>`;
+  }
+}
+
+// ── Kubernetes Deployments ──────────────────────────────────────────────────
+
+async function loadDeployments() {
+  const ns = document.getElementById('k8sNs').value;
+  const tbody = document.getElementById('deploymentBody');
+  tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center">Loading…</td></tr>';
+  try {
+    const deps = await api(`/k8s/deployments?namespace=${ns}`);
+    if (!deps.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center">No deployments found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = deps.map(d => {
+      const ready    = d.ready ?? 0;
+      const replicas = d.replicas ?? 0;
+      const r        = d.resources || {};
+      const cpuReq   = r.cpu_request    || '—';
+      const cpuLim   = r.cpu_limit      || '—';
+      const memReq   = r.memory_request || '—';
+      const memLim   = r.memory_limit   || '—';
+      const readyColor = ready >= replicas && replicas > 0 ? '#22c55e' : '#f59e0b';
+      return `<tr>
+        <td style="font-weight:500">${d.name}<br><span style="font-size:.75rem;color:var(--muted)">${d.namespace}</span></td>
+        <td style="text-align:center">
+          <span style="font-weight:700;color:${readyColor}">${ready}</span>
+          <span style="color:var(--muted)"> / ${replicas}</span>
+        </td>
+        <td style="font-size:.82rem"><code>${cpuReq}</code> → <code>${cpuLim}</code></td>
+        <td style="font-size:.82rem"><code>${memReq}</code> → <code>${memLim}</code></td>
+        <td style="text-align:center;white-space:nowrap">
+          <button class="btn btn-sm tip" data-tooltip="Remove 1 replica"
+            style="background:#ef4444;color:#fff;padding:.25rem .55rem;margin-right:.25rem;font-size:.8rem"
+            onclick="scaleDeployment('${d.namespace}','${d.name}',${replicas - 1})"
+            ${replicas <= 0 ? 'disabled style="opacity:.4;cursor:not-allowed"' : ''}>➖</button>
+          <button class="btn btn-sm tip" data-tooltip="Add 1 replica"
+            style="background:#22c55e;color:#000;padding:.25rem .55rem;font-size:.8rem"
+            onclick="scaleDeployment('${d.namespace}','${d.name}',${replicas + 1})">➕</button>
+        </td>
+        <td style="text-align:center">
+          <button class="btn btn-sm tip" data-tooltip="Edit CPU &amp; Memory"
+            style="background:#6366f1;color:#fff;font-size:.78rem"
+            onclick="openResModal('${d.namespace}','${d.name}','${cpuReq}','${cpuLim}','${memReq}','${memLim}')">✏️ Resources</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger,#ef4444);text-align:center">Failed: ${e.message}</td></tr>`;
+  }
+}
+
+async function scaleDeployment(namespace, name, replicas) {
+  if (replicas < 0) return;
+  const alertEl = document.getElementById('deploymentAlert');
+  alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #3b82f6;background:#3b82f618;font-size:.85rem">Scaling <strong>${name}</strong> to ${replicas} replica${replicas !== 1 ? 's' : ''}…</div>`;
+  try {
+    await api(`/k8s/deployments/${namespace}/${name}/scale`, { method: 'POST', body: JSON.stringify({ replicas }) });
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #22c55e;background:#22c55e18;font-size:.85rem"><strong>${name}</strong> scaled to ${replicas} replica${replicas !== 1 ? 's' : ''}.</div>`;
+    setTimeout(() => { alertEl.innerHTML = ''; loadDeployments(); }, 1200);
+  } catch (e) {
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #ef4444;background:#ef444418;font-size:.85rem">Scale failed: ${e.message}</div>`;
+  }
+}
+
+let _resCtx = {};
+function openResModal(namespace, name, cpuReq, cpuLim, memReq, memLim) {
+  _resCtx = { namespace, name };
+  document.getElementById('resModalTitle').textContent = name;
+  document.getElementById('resCpuReq').value = cpuReq === '—' ? '' : cpuReq;
+  document.getElementById('resCpuLim').value = cpuLim === '—' ? '' : cpuLim;
+  document.getElementById('resMemReq').value = memReq === '—' ? '' : memReq;
+  document.getElementById('resMemLim').value = memLim === '—' ? '' : memLim;
+  const modal = document.getElementById('resModal');
+  modal.style.display = 'flex';
+  modal.onclick = e => { if (e.target === modal) closeResModal(); };
+}
+
+function closeResModal() {
+  document.getElementById('resModal').style.display = 'none';
+}
+
+async function submitResources() {
+  const { namespace, name } = _resCtx;
+  const body = {
+    cpu_request:    document.getElementById('resCpuReq').value.trim() || null,
+    cpu_limit:      document.getElementById('resCpuLim').value.trim() || null,
+    memory_request: document.getElementById('resMemReq').value.trim() || null,
+    memory_limit:   document.getElementById('resMemLim').value.trim() || null,
+  };
+  const alertEl = document.getElementById('deploymentAlert');
+  closeResModal();
+  alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #6366f1;background:#6366f118;font-size:.85rem">Patching resources on <strong>${name}</strong>…</div>`;
+  try {
+    await api(`/k8s/deployments/${namespace}/${name}/resources`, { method: 'PATCH', body: JSON.stringify(body) });
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #22c55e;background:#22c55e18;font-size:.85rem">Resources updated on <strong>${name}</strong>.</div>`;
+    setTimeout(() => { alertEl.innerHTML = ''; loadDeployments(); }, 1500);
+  } catch (e) {
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #ef4444;background:#ef444418;font-size:.85rem">Patch failed: ${e.message}</div>`;
   }
 }
 </script>

@@ -85,17 +85,61 @@ async def k8s_list_deployments(namespace: str = "default") -> list:
         _load_kube_config()
         apps = client.AppsV1Api()
         deps = apps.list_namespaced_deployment(namespace=namespace)
-        return [
-            {
+        result = []
+        for d in deps.items:
+            containers = d.spec.template.spec.containers or []
+            res = {}
+            if containers:
+                r = containers[0].resources
+                if r:
+                    req = r.requests or {}
+                    lim = r.limits or {}
+                    res = {
+                        "cpu_request":    req.get("cpu"),
+                        "cpu_limit":      lim.get("cpu"),
+                        "memory_request": req.get("memory"),
+                        "memory_limit":   lim.get("memory"),
+                    }
+            result.append({
                 "name":      d.metadata.name,
                 "namespace": d.metadata.namespace,
                 "replicas":  d.spec.replicas,
                 "ready":     d.status.ready_replicas,
-                "image":     d.spec.template.spec.containers[0].image if d.spec.template.spec.containers else None,
-            }
-            for d in deps.items
-        ]
+                "image":     containers[0].image if containers else None,
+                "resources": res,
+            })
+        return result
     return await asyncio.to_thread(_list)
+
+
+async def k8s_patch_deployment_resources(
+    namespace: str, name: str,
+    cpu_request: str = None, cpu_limit: str = None,
+    memory_request: str = None, memory_limit: str = None,
+) -> dict:
+    def _patch():
+        _load_kube_config()
+        apps = client.AppsV1Api()
+        dep = apps.read_namespaced_deployment(name=name, namespace=namespace)
+        containers = dep.spec.template.spec.containers
+        if not containers:
+            raise RuntimeError("No containers in deployment")
+        c = containers[0]
+        if c.resources is None:
+            c.resources = client.V1ResourceRequirements()
+        if c.resources.requests is None:
+            c.resources.requests = {}
+        if c.resources.limits is None:
+            c.resources.limits = {}
+        if cpu_request    is not None: c.resources.requests["cpu"]    = cpu_request
+        if memory_request is not None: c.resources.requests["memory"] = memory_request
+        if cpu_limit      is not None: c.resources.limits["cpu"]      = cpu_limit
+        if memory_limit   is not None: c.resources.limits["memory"]   = memory_limit
+        apps.patch_namespaced_deployment(name=name, namespace=namespace, body=dep)
+        return {"status": "patched", "deployment": name,
+                "cpu_request": cpu_request, "cpu_limit": cpu_limit,
+                "memory_request": memory_request, "memory_limit": memory_limit}
+    return await asyncio.to_thread(_patch)
 
 
 async def k8s_scale_deployment(namespace: str, name: str, replicas: int) -> dict:
