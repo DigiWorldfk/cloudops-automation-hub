@@ -116,10 +116,14 @@ class K8sScaleRequest(BaseModel):
     replicas: int = Field(..., ge=0, le=100)
 
 class K8sResourcePatchRequest(BaseModel):
-    cpu_request:    Optional[str] = None   # e.g. "100m"
-    cpu_limit:      Optional[str] = None   # e.g. "500m"
-    memory_request: Optional[str] = None   # e.g. "128Mi"
-    memory_limit:   Optional[str] = None   # e.g. "512Mi"
+    cpu_request:    Optional[str] = None
+    cpu_limit:      Optional[str] = None
+    memory_request: Optional[str] = None
+    memory_limit:   Optional[str] = None
+
+class K8sClusterUpgradeRequest(BaseModel):
+    target_version: str
+    node_name: str
 
 class K8sNamespaceCreateRequest(BaseModel):
     name: str

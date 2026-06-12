@@ -2,13 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from auth.dependencies import get_current_user, require_role
 from db.database import log_activity
 from models.schemas import (
-    K8sScaleRequest, K8sResourcePatchRequest, K8sNamespaceCreateRequest,
+    K8sScaleRequest, K8sResourcePatchRequest, K8sClusterUpgradeRequest,
+    K8sNamespaceCreateRequest,
     HelmInstallRequest, HelmUpgradeRequest, HelmRollbackRequest,
 )
 from services.k8s_client import (
     k8s_list_namespaces, k8s_create_namespace, k8s_delete_namespace,
     k8s_list_pods, k8s_pod_logs, k8s_list_deployments, k8s_scale_deployment,
     k8s_patch_deployment_resources,
+    k8s_get_cluster_info, k8s_get_available_versions,
+    k8s_cordon_node, k8s_uncordon_node, k8s_drain_node, k8s_upgrade_cluster,
     helm_list_releases, helm_install, helm_upgrade, helm_rollback,
 )
 
@@ -98,6 +101,69 @@ async def patch_deployment_resources(namespace: str, name: str, body: K8sResourc
         return result
     except Exception as e:
         await log_activity(user["username"], "PATCH_RESOURCES", f"k8s:{namespace}/{name}", "FAIL", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cluster/info")
+async def get_cluster_info(user: dict = Depends(get_current_user)):
+    try:
+        return await k8s_get_cluster_info()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cluster/versions")
+async def get_available_versions(user: dict = Depends(get_current_user)):
+    try:
+        return await k8s_get_available_versions()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/nodes/{name}/cordon")
+async def cordon_node(name: str, user: dict = Depends(require_role("admin", "engineer"))):
+    try:
+        result = await k8s_cordon_node(name)
+        await log_activity(user["username"], "CORDON_NODE", f"k8s:node/{name}", "OK")
+        return result
+    except Exception as e:
+        await log_activity(user["username"], "CORDON_NODE", f"k8s:node/{name}", "FAIL", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/nodes/{name}/uncordon")
+async def uncordon_node(name: str, user: dict = Depends(require_role("admin", "engineer"))):
+    try:
+        result = await k8s_uncordon_node(name)
+        await log_activity(user["username"], "UNCORDON_NODE", f"k8s:node/{name}", "OK")
+        return result
+    except Exception as e:
+        await log_activity(user["username"], "UNCORDON_NODE", f"k8s:node/{name}", "FAIL", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/nodes/{name}/drain")
+async def drain_node(name: str, user: dict = Depends(require_role("admin"))):
+    try:
+        result = await k8s_drain_node(name)
+        await log_activity(user["username"], "DRAIN_NODE", f"k8s:node/{name}", "OK")
+        return result
+    except Exception as e:
+        await log_activity(user["username"], "DRAIN_NODE", f"k8s:node/{name}", "FAIL", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cluster/upgrade")
+async def upgrade_cluster(body: K8sClusterUpgradeRequest,
+                           user: dict = Depends(require_role("admin"))):
+    try:
+        result = await k8s_upgrade_cluster(body.target_version, body.node_name)
+        await log_activity(user["username"], "UPGRADE_CLUSTER",
+                           f"k8s:node/{body.node_name}", "OK", body.target_version)
+        return result
+    except Exception as e:
+        await log_activity(user["username"], "UPGRADE_CLUSTER",
+                           f"k8s:node/{body.node_name}", "FAIL", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

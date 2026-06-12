@@ -174,6 +174,66 @@
         </div>
       </div>
 
+      <!-- Cluster & Nodes Panel -->
+      <div class="card" style="margin-top:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:.75rem">
+            <h3 style="font-size:.95rem;margin:0">☸️ Cluster &amp; Nodes</h3>
+            <span id="clusterVersionBadge" style="display:none;padding:.2rem .65rem;border-radius:999px;font-size:.72rem;font-weight:700;background:#3b82f620;color:#3b82f6;border:1px solid #3b82f640"></span>
+          </div>
+          <div style="display:flex;gap:.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="loadClusterInfo()">↻ Refresh</button>
+            <button class="btn btn-sm" style="background:#f59e0b;color:#000" onclick="openUpgradeModal()">⬆ Upgrade Cluster</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Node</th>
+                <th>Role</th>
+                <th>Version</th>
+                <th style="text-align:center">Ready</th>
+                <th style="text-align:center">Schedulable</th>
+                <th>CPU cap</th>
+                <th>Memory cap</th>
+                <th style="text-align:center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="nodeBody">
+              <tr><td colspan="8" style="color:var(--muted);text-align:center">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="clusterAlert"></div>
+      </div>
+
+      <!-- Upgrade Modal -->
+      <div id="upgradeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:1.5rem 2rem;width:100%;max-width:460px;box-shadow:0 8px 40px rgba(0,0,0,.5)">
+          <h3 style="margin:0 0 1rem;font-size:1rem">⬆ Upgrade Kubernetes Cluster</h3>
+          <div style="display:grid;gap:.75rem">
+            <label style="font-size:.8rem;color:var(--muted)">
+              Target Version
+              <select id="upgradeVersion" style="width:100%;margin-top:.3rem;padding:.4rem .6rem;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#f1f5f9;font-size:.85rem">
+                <option value="">Loading versions…</option>
+              </select>
+            </label>
+            <label style="font-size:.8rem;color:var(--muted)">
+              Target Node
+              <select id="upgradeNode" style="width:100%;margin-top:.3rem;padding:.4rem .6rem;background:#0f172a;border:1px solid #334155;border-radius:5px;color:#f1f5f9;font-size:.85rem">
+                <option value="">Loading nodes…</option>
+              </select>
+            </label>
+          </div>
+          <div id="upgradeNote" style="margin-top:.75rem;font-size:.78rem;color:#94a3b8;line-height:1.5"></div>
+          <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1.25rem">
+            <button class="btn btn-ghost btn-sm" onclick="closeUpgradeModal()">Cancel</button>
+            <button class="btn btn-sm" style="background:#f59e0b;color:#000" onclick="submitUpgrade()">Apply Upgrade</button>
+          </div>
+        </div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem">
         <div class="card">
           <h3 style="font-size:.95rem;margin-bottom:.75rem">Quick Actions</h3>
@@ -201,7 +261,7 @@
   const user = await authGuard();
   if (!user) return;
   document.getElementById('sidebarMount').innerHTML = buildSidebar('dashboard.html');
-  await Promise.all([loadSummary(), loadContainers(), loadDeployments()]);
+  await Promise.all([loadSummary(), loadContainers(), loadDeployments(), loadClusterInfo()]);
 })();
 
 async function loadSummary() {
@@ -381,6 +441,117 @@ async function submitResources() {
     setTimeout(() => { alertEl.innerHTML = ''; loadDeployments(); }, 1500);
   } catch (e) {
     alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #ef4444;background:#ef444418;font-size:.85rem">Patch failed: ${e.message}</div>`;
+  }
+}
+
+// ── Cluster & Nodes ───────────────────────────────────────────────────────────
+
+let _clusterNodes = [];
+
+async function loadClusterInfo() {
+  const tbody = document.getElementById('nodeBody');
+  tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center">Loading…</td></tr>';
+  try {
+    const info = await api('/k8s/cluster/info');
+    _clusterNodes = info.nodes || [];
+    const badge = document.getElementById('clusterVersionBadge');
+    badge.textContent = info.git_version;
+    badge.style.display = 'inline-block';
+    if (!_clusterNodes.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);text-align:center">No nodes found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _clusterNodes.map(n => {
+      const readyDot  = n.ready       ? '✅' : '❌';
+      const schedIcon = n.schedulable ? '<span style="color:#22c55e">Yes</span>' : '<span style="color:#f59e0b">Cordoned</span>';
+      const roleTag   = (n.roles || []).map(r =>
+        `<span style="padding:.15rem .45rem;border-radius:4px;font-size:.7rem;font-weight:600;background:#3b82f620;color:#3b82f6">${r}</span>`
+      ).join(' ');
+      return `<tr>
+        <td style="font-weight:500;font-size:.85rem">${n.name}</td>
+        <td>${roleTag}</td>
+        <td style="font-size:.8rem;font-family:monospace">${n.version}</td>
+        <td style="text-align:center">${readyDot}</td>
+        <td style="text-align:center">${schedIcon}</td>
+        <td style="font-size:.8rem;color:var(--muted)">${n.cpu || '—'}</td>
+        <td style="font-size:.8rem;color:var(--muted)">${n.memory ? (parseInt(n.memory)/1048576).toFixed(1)+'Gi' : '—'}</td>
+        <td style="text-align:center;white-space:nowrap">
+          ${n.schedulable
+            ? `<button class="btn btn-sm tip" data-tooltip="Cordon (mark unschedulable)"
+                style="background:#f59e0b;color:#000;font-size:.75rem;margin-right:.25rem"
+                onclick="nodeAction('${n.name}','cordon')">Cordon</button>`
+            : `<button class="btn btn-sm tip" data-tooltip="Uncordon (allow scheduling)"
+                style="background:#22c55e;color:#000;font-size:.75rem;margin-right:.25rem"
+                onclick="nodeAction('${n.name}','uncordon')">Uncordon</button>`
+          }
+          <button class="btn btn-sm tip" data-tooltip="Drain: evict all pods before maintenance"
+            style="background:#ef4444;color:#fff;font-size:.75rem"
+            onclick="nodeAction('${n.name}','drain')">Drain</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--danger,#ef4444);text-align:center">Failed to load cluster: ${e.message}</td></tr>`;
+  }
+}
+
+async function nodeAction(name, action) {
+  const alertEl = document.getElementById('clusterAlert');
+  const colors  = { cordon:'#f59e0b', uncordon:'#22c55e', drain:'#ef4444' };
+  if (action === 'drain' && !confirm(`Drain node "${name}"? All pods will be evicted.`)) return;
+  alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid ${colors[action]};background:${colors[action]}18;font-size:.85rem">${action.charAt(0).toUpperCase()+action.slice(1)}ing node <strong>${name}</strong>…</div>`;
+  try {
+    const result = await api(`/k8s/nodes/${name}/${action}`, { method: 'POST' });
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #22c55e;background:#22c55e18;font-size:.85rem">Node <strong>${name}</strong> ${result.status}.</div>`;
+    setTimeout(() => { alertEl.innerHTML = ''; loadClusterInfo(); }, 1500);
+  } catch (e) {
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #ef4444;background:#ef444418;font-size:.85rem">${action} failed: ${e.message}</div>`;
+  }
+}
+
+async function openUpgradeModal() {
+  const modal = document.getElementById('upgradeModal');
+  document.getElementById('upgradeNote').textContent = '';
+  // Populate node selector
+  const nodeSel = document.getElementById('upgradeNode');
+  nodeSel.innerHTML = _clusterNodes.length
+    ? _clusterNodes.map(n => `<option value="${n.name}">${n.name} (${n.version})</option>`).join('')
+    : '<option value="">No nodes loaded — refresh first</option>';
+  // Fetch available versions
+  const verSel = document.getElementById('upgradeVersion');
+  verSel.innerHTML = '<option value="">Fetching…</option>';
+  try {
+    const data = await api('/k8s/cluster/versions');
+    verSel.innerHTML = data.available.map(v =>
+      `<option value="${v}"${v === data.current ? ' disabled' : ''}>${v}${v === data.current ? ' (current)' : ''}</option>`
+    ).join('');
+    document.getElementById('upgradeNote').textContent =
+      `Current cluster version: ${data.current}. For kind clusters, upgrade creates a new cluster image — the command will be shown after applying.`;
+  } catch (e) {
+    verSel.innerHTML = `<option value="">Failed: ${e.message}</option>`;
+  }
+  modal.style.display = 'flex';
+  modal.onclick = ev => { if (ev.target === modal) closeUpgradeModal(); };
+}
+
+function closeUpgradeModal() {
+  document.getElementById('upgradeModal').style.display = 'none';
+}
+
+async function submitUpgrade() {
+  const target_version = document.getElementById('upgradeVersion').value;
+  const node_name      = document.getElementById('upgradeNode').value;
+  if (!target_version || !node_name) { alert('Select a version and a node.'); return; }
+  closeUpgradeModal();
+  const alertEl = document.getElementById('clusterAlert');
+  alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #f59e0b;background:#f59e0b18;font-size:.85rem">Upgrading node <strong>${node_name}</strong> to <strong>${target_version}</strong>… (this may take a moment)</div>`;
+  try {
+    const result = await api('/k8s/cluster/upgrade', { method: 'POST', body: JSON.stringify({ target_version, node_name }) });
+    const note = result.note ? `<br><span style="font-size:.78rem;color:#94a3b8">${result.note}</span>` : '';
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #22c55e;background:#22c55e18;font-size:.85rem">Status: <strong>${result.status}</strong> — ${node_name} → ${target_version}${note}</div>`;
+    setTimeout(() => { alertEl.innerHTML = ''; loadClusterInfo(); }, 6000);
+  } catch (e) {
+    alertEl.innerHTML = `<div style="margin-top:.75rem;padding:.6rem 1rem;border-radius:6px;border-left:3px solid #ef4444;background:#ef444418;font-size:.85rem">Upgrade failed: ${e.message}</div>`;
   }
 }
 </script>

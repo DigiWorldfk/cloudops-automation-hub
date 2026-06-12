@@ -142,6 +142,128 @@ async def k8s_patch_deployment_resources(
     return await asyncio.to_thread(_patch)
 
 
+# ── Cluster & Node Management ─────────────────────────────────────────────────
+
+async def k8s_get_cluster_info() -> dict:
+    def _info():
+        _load_kube_config()
+        v1  = client.CoreV1Api()
+        ver = client.VersionApi().get_code()
+        nodes = v1.list_node()
+        node_list = []
+        for n in nodes.items:
+            roles = [lbl.split("/")[1] for lbl in (n.metadata.labels or {})
+                     if lbl.startswith("node-role.kubernetes.io/")]
+            conditions = {c.type: c.status for c in (n.status.conditions or [])}
+            node_list.append({
+                "name":        n.metadata.name,
+                "version":     n.status.node_info.kubelet_version,
+                "os":          n.status.node_info.os_image,
+                "arch":        n.status.node_info.architecture,
+                "ready":       conditions.get("Ready") == "True",
+                "schedulable": not bool(n.spec.unschedulable),
+                "roles":       roles or ["worker"],
+                "cpu":         n.status.capacity.get("cpu"),
+                "memory":      n.status.capacity.get("memory"),
+            })
+        return {
+            "server_version": f"{ver.major}.{ver.minor}",
+            "git_version":    ver.git_version,
+            "platform":       ver.platform,
+            "nodes":          node_list,
+        }
+    return await asyncio.to_thread(_info)
+
+
+async def k8s_get_available_versions() -> dict:
+    def _versions():
+        _load_kube_config()
+        ver = client.VersionApi().get_code()
+        all_versions = [
+            "v1.33.1", "v1.33.0",
+            "v1.32.5", "v1.32.4", "v1.32.3",
+            "v1.31.9", "v1.31.8", "v1.31.7",
+            "v1.30.13", "v1.30.12",
+            "v1.29.15",
+        ]
+        return {"current": ver.git_version, "available": all_versions}
+    return await asyncio.to_thread(_versions)
+
+
+async def k8s_cordon_node(name: str) -> dict:
+    def _run():
+        r = subprocess.run(["kubectl", "cordon", name],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or r.stdout.strip())
+        return {"status": "cordoned", "node": name}
+    return await asyncio.to_thread(_run)
+
+
+async def k8s_uncordon_node(name: str) -> dict:
+    def _run():
+        r = subprocess.run(["kubectl", "uncordon", name],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or r.stdout.strip())
+        return {"status": "uncordoned", "node": name}
+    return await asyncio.to_thread(_run)
+
+
+async def k8s_drain_node(name: str) -> dict:
+    def _run():
+        r = subprocess.run(
+            ["kubectl", "drain", name,
+             "--ignore-daemonsets", "--delete-emptydir-data", "--force", "--timeout=120s"],
+            capture_output=True, text=True, timeout=150,
+        )
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or r.stdout.strip())
+        return {"status": "drained", "node": name, "output": r.stdout[:500]}
+    return await asyncio.to_thread(_run)
+
+
+async def k8s_upgrade_cluster(target_version: str, node_name: str) -> dict:
+    def _run():
+        _load_kube_config()
+        v1    = client.CoreV1Api()
+        nodes = v1.list_node()
+        is_kind = any("kind" in n.metadata.name for n in nodes.items)
+        if is_kind:
+            v1.patch_node(node_name, {
+                "metadata": {"annotations": {"cloudops-hub/desired-version": target_version}}
+            })
+            return {
+                "status":         "annotated",
+                "node":           node_name,
+                "target_version": target_version,
+                "note": (
+                    f"kind clusters do not support in-place kubelet upgrade. "
+                    f"To upgrade, recreate with: "
+                    f"kind create cluster --image kindest/node:{target_version} --name <cluster-name>. "
+                    f"Desired version recorded as annotation on node {node_name}."
+                ),
+            }
+        steps = []
+        for cmd in [
+            ["kubeadm", "upgrade", "apply", target_version, "--yes"],
+            ["kubectl", "drain", node_name, "--ignore-daemonsets", "--delete-emptydir-data", "--force"],
+            ["apt-get", "install", "-y",
+             f"kubelet={target_version[1:]}-00", f"kubectl={target_version[1:]}-00"],
+            ["systemctl", "daemon-reload"],
+            ["systemctl", "restart", "kubelet"],
+            ["kubectl", "uncordon", node_name],
+        ]:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            steps.append({"cmd": " ".join(cmd), "rc": r.returncode, "out": r.stdout[:200]})
+            if r.returncode != 0:
+                return {"status": "failed", "step": " ".join(cmd),
+                        "error": r.stderr[:300], "steps": steps}
+        return {"status": "upgraded", "node": node_name,
+                "target_version": target_version, "steps": steps}
+    return await asyncio.to_thread(_run)
+
+
 async def k8s_scale_deployment(namespace: str, name: str, replicas: int) -> dict:
     def _scale():
         _load_kube_config()
