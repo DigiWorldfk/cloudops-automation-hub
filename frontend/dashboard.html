@@ -50,7 +50,9 @@
     <div class="topbar">
       <span class="topbar-title">📊 Dashboard</span>
       <div class="topbar-actions">
-        <button class="btn btn-ghost btn-sm" onclick="loadSummary();loadContainers()">↻ Refresh</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadSummary();loadContainers();loadDeployments();loadClusterInfo()">↻ Refresh</button>
+        <span id="topbar-user" style="font-size:.82rem;color:var(--muted);padding:0 .5rem;align-self:center"></span>
+        <button class="btn btn-danger btn-sm" onclick="logout()">⏻ Sign out</button>
       </div>
     </div>
     <div class="page">
@@ -261,6 +263,8 @@
   const user = await authGuard();
   if (!user) return;
   document.getElementById('sidebarMount').innerHTML = buildSidebar('dashboard.html');
+  const topbarUser = document.getElementById('topbar-user');
+  if (topbarUser) topbarUser.textContent = `👤 ${user.username}`;
   await Promise.all([loadSummary(), loadContainers(), loadDeployments(), loadClusterInfo()]);
 })();
 
