@@ -29,6 +29,7 @@ build/
 # Kubernetes
 kubeconfig
 *.kubeconfig
+k8s/kubeconfig-*.yaml
 
 # Logs
 *.log

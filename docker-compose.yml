@@ -27,6 +27,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      - KUBECONFIG=/app/kubeconfig.yaml
     expose:
       - "8000"
     depends_on: []
@@ -35,8 +37,7 @@ services:
       - cloudops_data:/app/data
       - terraform_workspaces:/app/terraform-workspaces
       - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker operations
-      # Uncomment to enable Kubernetes access via kubeconfig:
-      # - ~/.kube/config:/root/.kube/config:ro
+      - ./k8s/kubeconfig-local.yaml:/app/kubeconfig.yaml:ro
     networks:
       - cloudops
     cap_drop:

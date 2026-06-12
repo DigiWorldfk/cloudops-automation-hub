@@ -1,0 +1,172 @@
+# CloudOps Hub — Local Test Workloads
+# 3 pods across 1 namespace: web, api, cache
+# Apply with: kubectl apply -f k8s/test-workloads.yaml
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudops-test
+  labels:
+    env: local
+    managed-by: cloudops-hub
+
+---
+# Pod 1: Web frontend (nginx)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-web
+  namespace: cloudops-test
+  labels:
+    app: demo-web
+    tier: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-web
+  template:
+    metadata:
+      labels:
+        app: demo-web
+        tier: frontend
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-web
+  namespace: cloudops-test
+spec:
+  selector:
+    app: demo-web
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+
+---
+# Pod 2: API backend (httpbin — echos requests, great for testing)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  namespace: cloudops-test
+  labels:
+    app: demo-api
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+        tier: backend
+    spec:
+      containers:
+        - name: httpbin
+          image: kennethreitz/httpbin:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /status/200
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api
+  namespace: cloudops-test
+spec:
+  selector:
+    app: demo-api
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+# Pod 3: Cache (redis)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-cache
+  namespace: cloudops-test
+  labels:
+    app: demo-cache
+    tier: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-cache
+  template:
+    metadata:
+      labels:
+        app: demo-cache
+        tier: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          command: ["redis-server", "--save", "", "--loglevel", "warning"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-cache
+  namespace: cloudops-test
+spec:
+  selector:
+    app: demo-cache
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
