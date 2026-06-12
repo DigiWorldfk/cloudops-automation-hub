@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent — CloudOps Hub</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* ── Agent-specific styles ──────────────────────────────────────── */
+  .agent-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 1rem;
+    height: calc(100vh - 130px);
+    min-height: 0;
+  }
+
+  /* Chat panel */
+  .chat-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-height: 0;
+  }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    scroll-behavior: smooth;
+  }
+  .chat-input-row {
+    display: flex;
+    gap: .5rem;
+    padding: .75rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  #chatInput {
+    flex: 1;
+    resize: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: .9rem;
+    padding: .55rem .75rem;
+    min-height: 44px;
+    max-height: 120px;
+    overflow-y: auto;
+    outline: none;
+    transition: border-color .15s;
+  }
+  #chatInput:focus { border-color: var(--accent); }
+  #chatInput:disabled { opacity: .5; }
+
+  /* Messages */
+  .msg { display: flex; flex-direction: column; max-width: 85%; gap: .25rem; }
+  .msg.user   { align-self: flex-end; align-items: flex-end; }
+  .msg.assistant { align-self: flex-start; align-items: flex-start; }
+  .msg-bubble {
+    padding: .6rem .9rem;
+    border-radius: 12px;
+    font-size: .88rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user .msg-bubble {
+    background: var(--accent);
+    color: #fff;
+    border-bottom-right-radius: 3px;
+  }
+  .msg.assistant .msg-bubble {
+    background: var(--surface2, #1e2738);
+    color: var(--text);
+    border-bottom-left-radius: 3px;
+    border: 1px solid var(--border);
+  }
+  .msg-label {
+    font-size: .72rem;
+    color: var(--muted);
+    padding: 0 .25rem;
+  }
+
+  /* Tool call card */
+  .tool-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    padding: .5rem .75rem;
+    font-size: .8rem;
+    max-width: 85%;
+    align-self: flex-start;
+  }
+  .tool-card.amber { border-left-color: #f59e0b; }
+  .tool-card.red   { border-left-color: var(--danger); }
+  .tool-card .tool-name { font-weight: 600; color: var(--accent); margin-bottom: .2rem; }
+  .tool-card.amber .tool-name { color: #f59e0b; }
+  .tool-card.red   .tool-name { color: var(--danger); }
+  .tool-card .tool-args { color: var(--muted); font-family: monospace; font-size: .75rem; }
+  .tool-card .tool-tier { font-size: .68rem; padding: .1rem .4rem; border-radius: 99px; margin-left: .35rem; }
+  .tier-green { background: rgba(34,197,94,.15); color: #22c55e; }
+  .tier-amber { background: rgba(245,158,11,.15); color: #f59e0b; }
+  .tier-red   { background: rgba(239,68,68,.15);  color: #ef4444; }
+
+  /* Error message */
+  .msg-error {
+    align-self: flex-start;
+    background: rgba(239,68,68,.12);
+    border: 1px solid rgba(239,68,68,.3);
+    border-radius: var(--radius);
+    color: #ef4444;
+    font-size: .82rem;
+    padding: .4rem .75rem;
+    max-width: 85%;
+  }
+
+  /* Thinking indicator */
+  .thinking-dots span {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    margin: 0 2px;
+    animation: blink 1.2s infinite;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: .2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,80%,100%{opacity:.3} 40%{opacity:1} }
+
+  /* Right panel */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .approval-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: .65rem .75rem;
+    font-size: .82rem;
+    background: var(--bg);
+  }
+  .approval-item .aname { font-weight: 600; margin-bottom: .2rem; }
+  .approval-item .aargs { color: var(--muted); font-family: monospace; font-size: .72rem; margin-bottom: .5rem; word-break: break-all; }
+  .approval-actions { display: flex; gap: .4rem; }
+  .approval-meta { font-size: .72rem; color: var(--muted); margin-bottom: .3rem; }
+
+  /* History badge */
+  .history-clear {
+    font-size: .72rem;
+    color: var(--muted);
+    cursor: pointer;
+    padding: .15rem .4rem;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    background: transparent;
+    margin-left: .5rem;
+  }
+  .history-clear:hover { color: var(--text); border-color: var(--muted); }
+
+  /* Responsive collapse on small screens */
+  @media (max-width: 900px) {
+    .agent-layout { grid-template-columns: 1fr; }
+    .right-panel { max-height: 280px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div id="sidebarMount"></div>
+  <div class="main">
+
+    <div class="topbar">
+      <span class="topbar-title">🤖 AI Agent</span>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost btn-sm" onclick="loadApprovals()">↻ Refresh Approvals</button>
+        <span id="topbar-user" style="font-size:.82rem;color:var(--muted);padding:0 .5rem;align-self:center"></span>
+        <button class="btn btn-danger btn-sm" onclick="logout()">⏻ Sign out</button>
+      </div>
+    </div>
+
+    <div class="page" style="padding-bottom:0;overflow:hidden;display:flex;flex-direction:column;height:calc(100vh - 60px)">
+      <div class="page-header" style="margin-bottom:.75rem;flex-shrink:0">
+        <h1>AI-Powered Platform Engineering Assistant</h1>
+        <p>Ask in plain English — the agent queries your infrastructure and queues risky actions for approval.</p>
+      </div>
+
+      <div class="agent-layout" style="flex:1;min-height:0">
+
+        <!-- ── Chat panel ──────────────────────────────────────── -->
+        <div class="chat-panel">
+          <div class="chat-messages" id="chatMessages">
+            <!-- Welcome message -->
+            <div class="msg assistant">
+              <span class="msg-label">🤖 CloudOps Assistant</span>
+              <div class="msg-bubble">
+                Hello! I can help you manage your AWS, Azure, Kubernetes, and Docker infrastructure.
+
+Try asking:
+• <em>What containers are currently running?</em>
+• <em>Show me all Kubernetes pods in the cloudops-test namespace</em>
+• <em>How many Azure VMs do we have and what are their statuses?</em>
+• <em>Scale the demo-web deployment to 3 replicas</em>
+• <em>What are our AWS costs for the last 30 days?</em>
+
+Read-only queries run instantly. Mutating actions (start/stop/scale) go to the approval queue on the right.
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-row">
+            <textarea
+              id="chatInput"
+              placeholder="Ask about your infrastructure…"
+              rows="1"
+              onkeydown="handleKey(event)"
+            ></textarea>
+            <button class="btn btn-primary btn-sm" id="sendBtn" onclick="sendMessage()" style="align-self:flex-end;padding:.55rem 1rem">
+              Send ↵
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Right panel ─────────────────────────────────────── -->
+        <div class="right-panel">
+
+          <!-- Pending approvals -->
+          <div class="card" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-shrink:0">
+              <h3 style="font-size:.95rem;margin:0">⏳ Pending Approvals
+                <span id="approvalCount" class="badge badge-warning" style="display:none"></span>
+              </h3>
+              <button class="btn btn-ghost btn-sm" onclick="loadApprovals()">↻</button>
+            </div>
+            <div id="approvalsList" style="overflow-y:auto;flex:1">
+              <p style="font-size:.82rem;color:var(--muted)">No pending approvals.</p>
+            </div>
+          </div>
+
+          <!-- Approval history toggle -->
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+              <h3 style="font-size:.9rem;margin:0">📋 Recent Decisions</h3>
+              <button class="btn btn-ghost btn-sm" onclick="loadHistory()">↻</button>
+            </div>
+            <div id="historyList" style="font-size:.78rem;color:var(--muted)">—</div>
+          </div>
+
+          <!-- Quick prompts -->
+          <div class="card">
+            <h3 style="font-size:.88rem;margin-bottom:.5rem">⚡ Quick Queries</h3>
+            <div style="display:flex;flex-direction:column;gap:.35rem">
+              <button class="btn btn-ghost btn-sm" style="text-align:left" onclick="quickSend('List all running Docker containers')">🐳 List running containers</button>
+              <button class="btn btn-ghost btn-sm" style="text-align:left" onclick="quickSend('Show all Kubernetes pods across all namespaces')">☸️ All K8s pods</button>
+              <button class="btn btn-ghost btn-sm" style="text-align:left" onclick="quickSend('List all Azure VMs and their current status')">🔵 Azure VM status</button>
+              <button class="btn btn-ghost btn-sm" style="text-align:left" onclick="quickSend('Show AWS EC2 instances and their states')">🟠 AWS EC2 status</button>
+              <button class="btn btn-ghost btn-sm" style="text-align:left" onclick="quickSend('What are our AWS costs for the last 30 days?')">💰 AWS costs</button>
+              <button class="btn btn-ghost btn-sm" style="text-align:left" onclick="quickSend('Show recent activity log entries')">📋 Recent activity</button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.agent-layout -->
+    </div><!-- /.page -->
+  </div><!-- /.main -->
+</div><!-- /.layout -->
+
+<script src="shared.js"></script>
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let chatHistory = [];   // [{role, content}] for the API
+let isStreaming  = false;
+
+// ── Init ───────────────────────────────────────────────────────────────────
+(async () => {
+  const user = await authGuard();
+  if (!user) return;
+  document.getElementById('sidebarMount').innerHTML = buildSidebar('agent.html');
+  const topbarUser = document.getElementById('topbar-user');
+  if (topbarUser) topbarUser.textContent = `👤 ${user.username}`;
+  await loadApprovals();
+  await loadHistory();
+})();
+
+// ── Keyboard shortcut: Ctrl+Enter or Cmd+Enter to send ───────────────────
+function handleKey(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    sendMessage();
+  }
+  // auto-resize textarea
+  const ta = document.getElementById('chatInput');
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+
+function quickSend(text) {
+  document.getElementById('chatInput').value = text;
+  sendMessage();
+}
+
+// ── Send message ───────────────────────────────────────────────────────────
+async function sendMessage() {
+  if (isStreaming) return;
+  const input = document.getElementById('chatInput');
+  const text  = input.value.trim();
+  if (!text) return;
+
+  input.value   = '';
+  input.style.height = '';
+  input.disabled = true;
+  document.getElementById('sendBtn').disabled = true;
+  isStreaming = true;
+
+  // Append user bubble
+  appendUserMsg(text);
+  chatHistory.push({ role: 'user', content: text });
+
+  // Placeholder assistant bubble (streaming into)
+  const assistantEl = appendAssistantMsg('');
+  const thinkingEl  = appendThinking();
+
+  try {
+    const response = await fetch('/api/ai/chat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ message: text, history: chatHistory.slice(0, -1) }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: response.statusText }));
+      thinkingEl.remove();
+      setAssistantText(assistantEl, `⚠️ ${err.detail || 'Request failed'}`);
+      isStreaming = false;
+      enableInput();
+      return;
+    }
+
+    const reader  = response.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = '';
+    let   fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop();   // keep incomplete last line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+        switch (evt.type) {
+          case 'token':
+            thinkingEl.remove();
+            fullText += evt.content;
+            setAssistantText(assistantEl, fullText);
+            scrollToBottom();
+            break;
+
+          case 'tool_call':
+            thinkingEl.remove();
+            appendToolCallCard(evt.name, evt.args, evt.tier);
+            appendThinkingAfterTool();
+            scrollToBottom();
+            break;
+
+          case 'tool_result':
+            // Result fed back to model — handled silently (model will describe it)
+            break;
+
+          case 'approval_queued':
+            appendApprovalQueuedCard(evt.id, evt.tool, evt.args, evt.tier);
+            loadApprovals();  // refresh the panel
+            scrollToBottom();
+            break;
+
+          case 'error':
+            thinkingEl.remove();
+            appendErrorMsg(evt.content);
+            scrollToBottom();
+            break;
+
+          case 'done':
+            break;
+        }
+      }
+    }
+
+    // Remove any lingering thinking indicator
+    document.querySelectorAll('.thinking-dots').forEach(el => el.remove());
+
+    // Save assistant reply to history
+    if (fullText) {
+      chatHistory.push({ role: 'assistant', content: fullText });
+      // Keep history to last 20 turns to avoid token overflow
+      if (chatHistory.length > 40) chatHistory = chatHistory.slice(-40);
+    }
+
+  } catch (err) {
+    document.querySelectorAll('.thinking-dots').forEach(el => el.remove());
+    appendErrorMsg(`Network error: ${err.message}`);
+  }
+
+  isStreaming = false;
+  enableInput();
+}
+
+// ── DOM helpers ────────────────────────────────────────────────────────────
+
+function enableInput() {
+  const input = document.getElementById('chatInput');
+  input.disabled = false;
+  document.getElementById('sendBtn').disabled = false;
+  input.focus();
+}
+
+function appendUserMsg(text) {
+  const box = document.getElementById('chatMessages');
+  const el  = document.createElement('div');
+  el.className = 'msg user';
+  el.innerHTML = `<span class="msg-label">You</span><div class="msg-bubble">${escHtml(text)}</div>`;
+  box.appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
+function appendAssistantMsg(text) {
+  const box = document.getElementById('chatMessages');
+  const el  = document.createElement('div');
+  el.className = 'msg assistant';
+  el.innerHTML = `<span class="msg-label">🤖 CloudOps Assistant</span><div class="msg-bubble"></div>`;
+  box.appendChild(el);
+  setAssistantText(el, text);
+  return el;
+}
+
+function setAssistantText(el, text) {
+  const bubble = el.querySelector('.msg-bubble');
+  if (bubble) bubble.textContent = text;
+}
+
+function appendThinking() {
+  const box = document.getElementById('chatMessages');
+  const el  = document.createElement('div');
+  el.className = 'thinking-dots';
+  el.style.cssText = 'padding:.3rem .5rem;align-self:flex-start';
+  el.innerHTML = '<span></span><span></span><span></span>';
+  box.appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
+function appendThinkingAfterTool() {
+  // Only add if not already present
+  if (!document.querySelector('.thinking-dots')) return appendThinking();
+}
+
+function appendToolCallCard(name, args, tier) {
+  const box  = document.getElementById('chatMessages');
+  const el   = document.createElement('div');
+  el.className = `tool-card ${tier}`;
+  const tierLabel = `<span class="tool-tier tier-${tier}">${tier.toUpperCase()}</span>`;
+  const argsStr = Object.keys(args).length
+    ? JSON.stringify(args, null, 2)
+    : '(no arguments)';
+  el.innerHTML = `
+    <div class="tool-name">🔧 ${escHtml(name)} ${tierLabel}</div>
+    <div class="tool-args">${escHtml(argsStr)}</div>`;
+  box.appendChild(el);
+}
+
+function appendApprovalQueuedCard(id, tool, args, tier) {
+  const box = document.getElementById('chatMessages');
+  const el  = document.createElement('div');
+  el.className = `tool-card ${tier}`;
+  el.style.borderLeftColor = tier === 'red' ? 'var(--danger)' : '#f59e0b';
+  el.innerHTML = `
+    <div class="tool-name" style="color:${tier === 'red' ? 'var(--danger)' : '#f59e0b'}">
+      ⏳ Queued for approval — ${escHtml(tool)} <span class="tool-tier tier-${tier}">${tier.toUpperCase()}</span>
+    </div>
+    <div class="tool-args">ID #${id} · ${escHtml(JSON.stringify(args))}</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-top:.25rem">Approve or deny in the panel →</div>`;
+  box.appendChild(el);
+}
+
+function appendErrorMsg(text) {
+  const box = document.getElementById('chatMessages');
+  const el  = document.createElement('div');
+  el.className = 'msg-error';
+  el.textContent = `⚠️ ${text}`;
+  box.appendChild(el);
+}
+
+function scrollToBottom() {
+  const box = document.getElementById('chatMessages');
+  box.scrollTop = box.scrollHeight;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Approvals panel ────────────────────────────────────────────────────────
+
+async function loadApprovals() {
+  const list  = document.getElementById('approvalsList');
+  const badge = document.getElementById('approvalCount');
+  try {
+    const data = await api('/ai/approvals?status=pending');
+    if (!data.length) {
+      list.innerHTML = '<p style="font-size:.82rem;color:var(--muted)">No pending approvals.</p>';
+      badge.style.display = 'none';
+      return;
+    }
+    badge.textContent    = data.length;
+    badge.style.display  = 'inline-flex';
+    list.innerHTML = data.map(a => `
+      <div class="approval-item" id="appr-${a.id}">
+        <div class="aname">
+          <span class="tool-tier tier-${a.risk_tier}" style="margin-right:.35rem">${a.risk_tier.toUpperCase()}</span>
+          ${escHtml(a.tool_name)}
+        </div>
+        <div class="approval-meta">by ${escHtml(a.requested_by)} · ${new Date(a.created_at).toLocaleTimeString()}</div>
+        <div class="aargs">${escHtml(a.tool_args)}</div>
+        <div class="approval-actions">
+          <button class="btn btn-primary btn-sm" onclick="approveAction(${a.id})">✓ Approve</button>
+          <button class="btn btn-danger  btn-sm" onclick="denyAction(${a.id})">✗ Deny</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    list.innerHTML = `<p style="font-size:.78rem;color:var(--danger)">${escHtml(String(e))}</p>`;
+  }
+}
+
+async function approveAction(id) {
+  const el = document.getElementById(`appr-${id}`);
+  if (el) el.style.opacity = '.5';
+  try {
+    const res = await api(`/ai/approvals/${id}/approve`, { method: 'POST' });
+    const detail = res.result ? JSON.stringify(res.result).slice(0, 120) : 'ok';
+    appendAssistantMsg(`✅ Approval #${id} executed. Result: ${detail}`);
+    scrollToBottom();
+    await loadApprovals();
+    await loadHistory();
+  } catch (e) {
+    if (el) el.style.opacity = '1';
+    appendErrorMsg(`Approval failed: ${e.message || e}`);
+    scrollToBottom();
+  }
+}
+
+async function denyAction(id) {
+  const el = document.getElementById(`appr-${id}`);
+  if (el) el.style.opacity = '.5';
+  try {
+    await api(`/ai/approvals/${id}/deny`, { method: 'POST' });
+    appendAssistantMsg(`🚫 Approval #${id} denied.`);
+    scrollToBottom();
+    await loadApprovals();
+    await loadHistory();
+  } catch (e) {
+    if (el) el.style.opacity = '1';
+    appendErrorMsg(`Deny failed: ${e.message || e}`);
+  }
+}
+
+async function loadHistory() {
+  const el = document.getElementById('historyList');
+  try {
+    const data = await api('/ai/approvals?status=');
+    const recent = data.filter(a => a.status !== 'pending').slice(0, 8);
+    if (!recent.length) { el.textContent = 'No decisions yet.'; return; }
+    el.innerHTML = recent.map(a => {
+      const icon = a.status === 'executed' ? '✅' : a.status === 'denied' ? '🚫' : a.status === 'failed' ? '❌' : '•';
+      return `<div style="display:flex;gap:.4rem;align-items:center;padding:.2rem 0;border-bottom:1px solid var(--border)">
+        <span>${icon}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(a.tool_name)}</span>
+        <span style="color:var(--muted)">${a.reviewed_by || '—'}</span>
+      </div>`;
+    }).join('');
+  } catch { el.textContent = '—'; }
+}
+</script>
+</body>
+</html>

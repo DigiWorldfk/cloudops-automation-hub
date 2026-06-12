@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
-from routers import auth, dashboard, azure, aws, docker_ops, terraform, kubernetes_ops, activity
+from routers import auth, dashboard, azure, aws, docker_ops, terraform, kubernetes_ops, activity, ai_agent
 from db.database import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -46,3 +46,4 @@ app.include_router(docker_ops.router,     prefix="/api/docker",     tags=["Docke
 app.include_router(terraform.router,      prefix="/api/terraform",  tags=["Terraform"])
 app.include_router(kubernetes_ops.router, prefix="/api/k8s",        tags=["Kubernetes"])
 app.include_router(activity.router,       prefix="/api/activity",   tags=["Activity"])
+app.include_router(ai_agent.router,       prefix="/api/ai",         tags=["AI Agent"])

@@ -2,6 +2,7 @@
 
 const NAV_ITEMS = [
   { label: 'Dashboard',   href: 'dashboard.html',    icon: '📊', section: 'OVERVIEW' },
+  { label: 'AI Agent',    href: 'agent.html',         icon: '🤖', section: 'OVERVIEW' },
   { label: 'Azure VMs',   href: 'azure.html',         icon: '🔵', section: 'CLOUD' },
   { label: 'AWS EC2',     href: 'aws.html',           icon: '🟠', section: 'CLOUD' },
   { label: 'Docker',      href: 'docker.html',        icon: '🐳', section: 'COMPUTE' },
