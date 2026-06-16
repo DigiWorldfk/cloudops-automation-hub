@@ -211,6 +211,37 @@ select.form-control option { background: var(--surface); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Sidebar dropdown groups ─────────────────────────────────────────────── */
+.nav-section-group { display: contents; }
+
+.nav-group-header {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .55rem 1.25rem;
+  color: var(--muted);
+  font-size: .875rem;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background .15s, color .15s;
+  user-select: none;
+}
+.nav-group-header:hover { background: var(--card); color: var(--text); }
+.nav-group-header.child-active { background: var(--card); color: var(--accent); border-left-color: var(--accent); }
+.nav-group-label { flex: 1; }
+.nav-group-arrow  { font-size: .65rem; color: var(--muted); }
+
+.nav-sub-item {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .42rem 1.25rem .42rem 2.85rem;
+  color: var(--muted);
+  font-size: .82rem;
+  border-left: 3px solid transparent;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+}
+.nav-sub-item:hover  { background: var(--card); color: var(--text); text-decoration: none; }
+.nav-sub-item.active { background: var(--card); color: var(--accent); border-left-color: var(--accent); }
+.nav-sub-item .icon  { font-size: .88rem; width: 18px; text-align: center; }
+
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .sidebar { transform: translateX(-100%); transition: transform .2s; }

@@ -1,31 +1,61 @@
 // shared.js — sidebar, auth guard, common utilities
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',   href: 'dashboard.html',    icon: '📊', section: 'OVERVIEW' },
-  { label: 'AI Agent',    href: 'agent.html',         icon: '🤖', section: 'OVERVIEW' },
-  { label: 'Azure VMs',   href: 'azure.html',         icon: '🔵', section: 'CLOUD' },
-  { label: 'AWS EC2',     href: 'aws.html',           icon: '🟠', section: 'CLOUD' },
-  { label: 'Docker',      href: 'docker.html',        icon: '🐳', section: 'COMPUTE' },
-  { label: 'Kubernetes',  href: 'kubernetes.html',    icon: '☸️',  section: 'COMPUTE' },
-  { label: 'Terraform',   href: 'terraform.html',     icon: '🏗️',  section: 'IaC' },
-  { label: 'Activity Log',href: 'activity.html',      icon: '📋', section: 'OPS' },
+  { label: 'Dashboard',    href: 'dashboard.html',  icon: '📊', section: 'OVERVIEW' },
+  { label: 'AI Agent',     href: 'agent.html',       icon: '🤖', section: 'OVERVIEW' },
+  {
+    label: 'Azure',
+    icon: '🔵',
+    section: 'CLOUD',
+    children: [
+      { label: 'Virtual Machines', href: 'azure.html',      icon: '🖥️' },
+      { label: 'AKS',              href: 'kubernetes.html',  icon: '☸️' },
+      { label: 'Containers',       href: 'docker.html',      icon: '🐳' },
+    ],
+  },
+  { label: 'AWS EC2',      href: 'aws.html',         icon: '🟠', section: 'CLOUD' },
+  { label: 'Terraform',    href: 'terraform.html',   icon: '🏗️',  section: 'IaC' },
+  { label: 'Activity Log', href: 'activity.html',    icon: '📋', section: 'OPS' },
 ];
 
 function buildSidebar(activeHref) {
   const currentUser = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
-  let sections = [];
+  const openGroups  = JSON.parse(localStorage.getItem('sidebarOpen') || '{}');
+
   let lastSection = null;
   let html = '';
 
   for (const item of NAV_ITEMS) {
     if (item.section !== lastSection) {
       if (lastSection !== null) html += '</div>';
-      html += `<div class="nav-section">${item.section}</div>`;
+      html += `<div class="nav-section-group"><div class="nav-section">${item.section}</div>`;
       lastSection = item.section;
     }
-    const active = location.pathname.endsWith(item.href) ? 'active' : '';
-    html += `<a class="nav-item ${active}" href="${item.href}"><span class="icon">${item.icon}</span>${item.label}</a>`;
+
+    if (item.children) {
+      const childActive = item.children.some(c => location.pathname.endsWith(c.href));
+      const isOpen = childActive || !!openGroups[item.label];
+      const gid = 'navgroup-' + item.label.replace(/\s+/g, '_');
+
+      html += `<div class="nav-group" id="${gid}">
+        <div class="nav-group-header${childActive ? ' child-active' : ''}" onclick="toggleNavGroup('${item.label}')">
+          <span class="icon">${item.icon}</span>
+          <span class="nav-group-label">${item.label}</span>
+          <span class="nav-group-arrow">${isOpen ? '▾' : '▸'}</span>
+        </div>
+        <div class="nav-group-children" style="display:${isOpen ? 'block' : 'none'}">`;
+
+      for (const child of item.children) {
+        const active = location.pathname.endsWith(child.href) ? 'active' : '';
+        html += `<a class="nav-sub-item ${active}" href="${child.href}"><span class="icon">${child.icon}</span>${child.label}</a>`;
+      }
+      html += `</div></div>`;
+    } else {
+      const active = location.pathname.endsWith(item.href) ? 'active' : '';
+      html += `<a class="nav-item ${active}" href="${item.href}"><span class="icon">${item.icon}</span>${item.label}</a>`;
+    }
   }
+  if (lastSection !== null) html += '</div>';
 
   return `
     <div class="sidebar" id="sidebar">
@@ -39,6 +69,18 @@ function buildSidebar(activeHref) {
         <button class="btn btn-ghost btn-sm" style="margin-top:.5rem;width:100%" onclick="logout()">Sign out</button>
       </div>
     </div>`;
+}
+
+function toggleNavGroup(label) {
+  const openGroups = JSON.parse(localStorage.getItem('sidebarOpen') || '{}');
+  openGroups[label] = !openGroups[label];
+  localStorage.setItem('sidebarOpen', JSON.stringify(openGroups));
+  const group = document.getElementById('navgroup-' + label.replace(/\s+/g, '_'));
+  if (!group) return;
+  const children = group.querySelector('.nav-group-children');
+  const arrow    = group.querySelector('.nav-group-arrow');
+  children.style.display = openGroups[label] ? 'block' : 'none';
+  arrow.textContent      = openGroups[label] ? '▾' : '▸';
 }
 
 async function authGuard() {
@@ -85,6 +127,7 @@ function showAlert(id, msg, type = 'danger') {
 
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...opts.headers },
     ...opts,
   });
