@@ -33,7 +33,8 @@ Real-time infrastructure overview — all panels on a single page:
 
 | Panel | What it shows |
 |---|---|
-| **Stat Cards** | Azure VM count, AWS EC2 count, container count (running/total), activity events |
+| **Stat Cards** | Azure (VM count), AWS EC2 count, container count (running/total), activity events |
+| **🔵 Azure Services** | Three clickable tiles — 🖥️ VMs · ☸️ AKS · 🐳 Containers — each with a live count badge and a direct link to the relevant management page |
 | **Recent Activity** | Last 10 audit log entries with time, user, action, resource, status |
 | **🐳 Docker Containers** | All containers with status, image, ports — Start / Stop / Restart controls |
 | **☸️ Kubernetes Deployments** | Replicas (ready/desired), CPU & memory req→limit — Scale ➕➖ and ✏️ Resource edit |
@@ -53,6 +54,12 @@ Real-time infrastructure overview — all panels on a single page:
 | ⬆ Upgrade Cluster | Select target version + node from dropdown — applies live or provides kind recreate command |
 
 All action buttons show a **hover tooltip** with the target resource name.
+
+#### Sidebar Navigation
+The left-hand sidebar includes a **collapsible Azure group** — click the ▶ Azure arrow to expand/collapse the sub-items (Virtual Machines, AKS, Containers). The expanded/collapsed state is persisted per-browser in `localStorage`.
+
+#### Quick Actions
+The Quick Actions bar on the dashboard provides one-click navigation to: **🖥️ Azure VMs**, **☸️ AKS**, **🐳 Containers**, **🟠 AWS EC2**, and **🏗️ Terraform**.
 
 ---
 
@@ -459,6 +466,7 @@ See [`.env.example`](.env.example) for the full list with generation commands.
 | **Phase 1** | ✅ Done | Core portal — Auth, Docker, Azure, AWS, K8s, Terraform, Activity log |
 | **Phase 2** | ✅ Done | Dashboard panels — Docker controls, K8s scale/resources, Cluster node ops |
 | **Phase 3** | ✅ Done | AI Agent — GPT-4o function calling, approval workflow, 24 tools, SSE streaming |
+| **Phase 3.5** | ✅ Done | Dashboard Azure Services panel — clickable VM/AKS/Container tiles with live counts; collapsible sidebar Azure nav group |
 | **Phase 4** | ⏳ Next | Cost dashboard with Chart.js trend graphs |
 | **Phase 4** | ⏳ Next | Watchdog — auto-detect CrashLoopBackOff, cost anomalies, alert + auto-remediate |
 | **Phase 5** | 🔮 Planned | Multi-user accounts with per-user RBAC and engineer approval flows |
