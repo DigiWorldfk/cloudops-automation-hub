@@ -62,7 +62,7 @@
       </div>
 
       <div class="stat-grid" id="statGrid">
-        <div class="stat-card azure"><div class="label">Azure VMs</div><div class="value" id="azureCount">—</div><div class="sub" id="azureErr"></div></div>
+        <div class="stat-card azure"><div class="label">Azure</div><div class="value" id="azureCount">—</div><div class="sub" id="azureErr"></div></div>
         <div class="stat-card aws">  <div class="label">AWS Instances</div><div class="value" id="awsCount">—</div><div class="sub" id="awsErr"></div></div>
         <div class="stat-card docker"><div class="label">Containers</div><div class="value" id="dockerCount">—</div><div class="sub" id="dockerRunning"></div></div>
         <div class="stat-card"><div class="label">Activity Events</div><div class="value" id="activityCount">—</div><div class="sub">today</div></div>
@@ -78,6 +78,46 @@
             <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Status</th></tr></thead>
             <tbody id="activityBody"><tr><td colspan="5" style="color:var(--muted);text-align:center">Loading…</td></tr></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Azure Services Panel -->
+      <div class="card" style="margin-top:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
+          <h3 style="font-size:.95rem">🔵 Azure Services</h3>
+          <span style="font-size:.78rem;color:var(--muted)">Select a service to manage</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem">
+          <a href="azure.html" style="text-decoration:none">
+            <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:1rem;cursor:pointer;transition:border-color .15s,background .15s" onmouseover="this.style.borderColor='#3b82f6';this.style.background='#1e2e45'" onmouseout="this.style.borderColor='#334155';this.style.background='#0f172a'">
+              <div style="font-size:1.6rem;margin-bottom:.4rem">🖥️</div>
+              <div style="font-size:.9rem;font-weight:700;color:#f1f5f9">Virtual Machines</div>
+              <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">Create, start, stop &amp; resize Azure VMs</div>
+              <div style="margin-top:.65rem">
+                <span style="font-size:.7rem;padding:.2rem .55rem;background:#3b82f620;color:#3b82f6;border-radius:999px;border:1px solid #3b82f640" id="azureVmCount">— VMs</span>
+              </div>
+            </div>
+          </a>
+          <a href="kubernetes.html" style="text-decoration:none">
+            <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:1rem;cursor:pointer;transition:border-color .15s,background .15s" onmouseover="this.style.borderColor='#8b5cf6';this.style.background='#1e1b35'" onmouseout="this.style.borderColor='#334155';this.style.background='#0f172a'">
+              <div style="font-size:1.6rem;margin-bottom:.4rem">☸️</div>
+              <div style="font-size:.9rem;font-weight:700;color:#f1f5f9">AKS</div>
+              <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">Manage pods, deployments &amp; Helm releases</div>
+              <div style="margin-top:.65rem">
+                <span style="font-size:.7rem;padding:.2rem .55rem;background:#8b5cf620;color:#8b5cf6;border-radius:999px;border:1px solid #8b5cf640">Kubernetes</span>
+              </div>
+            </div>
+          </a>
+          <a href="docker.html" style="text-decoration:none">
+            <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:1rem;cursor:pointer;transition:border-color .15s,background .15s" onmouseover="this.style.borderColor='#0db7ed';this.style.background='#0f1e28'" onmouseout="this.style.borderColor='#334155';this.style.background='#0f172a'">
+              <div style="font-size:1.6rem;margin-bottom:.4rem">🐳</div>
+              <div style="font-size:.9rem;font-weight:700;color:#f1f5f9">Containers</div>
+              <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">Start, stop &amp; inspect Docker containers</div>
+              <div style="margin-top:.65rem" id="dockerRunningBadge">
+                <span style="font-size:.7rem;padding:.2rem .55rem;background:#0db7ed20;color:#0db7ed;border-radius:999px;border:1px solid #0db7ed40">Docker</span>
+              </div>
+            </div>
+          </a>
         </div>
       </div>
 
@@ -240,11 +280,11 @@
         <div class="card">
           <h3 style="font-size:.95rem;margin-bottom:.75rem">Quick Actions</h3>
           <div style="display:flex;flex-wrap:wrap;gap:.5rem">
-            <a href="azure.html"     class="btn btn-outline btn-sm">🔵 Azure VMs</a>
-            <a href="aws.html"       class="btn btn-outline btn-sm">🟠 AWS EC2</a>
-            <a href="docker.html"    class="btn btn-outline btn-sm">🐳 Docker</a>
-            <a href="kubernetes.html" class="btn btn-outline btn-sm">☸️ Kubernetes</a>
-            <a href="terraform.html" class="btn btn-outline btn-sm">🏗️ Terraform</a>
+            <a href="azure.html"      class="btn btn-outline btn-sm">🖥️ Azure VMs</a>
+            <a href="kubernetes.html" class="btn btn-outline btn-sm">☸️ AKS</a>
+            <a href="docker.html"     class="btn btn-outline btn-sm">🐳 Containers</a>
+            <a href="aws.html"        class="btn btn-outline btn-sm">🟠 AWS EC2</a>
+            <a href="terraform.html"  class="btn btn-outline btn-sm">🏗️ Terraform</a>
           </div>
         </div>
         <div class="card">
@@ -275,6 +315,11 @@ async function loadSummary() {
     document.getElementById('awsCount').textContent    = data.aws_instances.count;
     document.getElementById('dockerCount').textContent = data.docker_containers.count;
     document.getElementById('dockerRunning').textContent = `${data.docker_containers.running} running`;
+    // Azure services tiles live counts
+    const vmCountEl = document.getElementById('azureVmCount');
+    if (vmCountEl) vmCountEl.textContent = data.azure_vms.count + ' VMs';
+    const dkBadgeEl = document.getElementById('dockerRunningBadge');
+    if (dkBadgeEl) dkBadgeEl.innerHTML = `<span style="font-size:.7rem;padding:.2rem .55rem;background:#0db7ed20;color:#0db7ed;border-radius:999px;border:1px solid #0db7ed40">${data.docker_containers.running} running / ${data.docker_containers.count} total</span>`;
     if (data.azure_vms.error)  document.getElementById('azureErr').textContent  = '⚠ ' + data.azure_vms.error.substring(0,40);
     if (data.aws_instances.error) document.getElementById('awsErr').textContent = '⚠ ' + data.aws_instances.error.substring(0,40);
 
