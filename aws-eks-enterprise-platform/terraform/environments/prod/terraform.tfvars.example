@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars (never commit this file)
+aws_region          = "eu-west-1"
+domain_name         = "REPLACE_WITH_YOUR_DOMAIN"
+github_org          = "DigiWorldfk"
+github_repo         = "aws-eks-enterprise-platform"
+notification_email  = "ops@example.com"
+
+db_master_username  = "dbadmin"
+db_master_password  = "REPLACE_WITH_SECURE_PASSWORD"
+
+# Enable Transit Gateway for on-prem connectivity (prod)
+enable_transit_gateway  = true
+tgw_destination_cidrs   = ["192.168.0.0/16"]  # on-prem CIDR
+
+# Enable Site-to-Site VPN
+enable_vpn              = true
+customer_gateway_ip     = "REPLACE_WITH_ONPREM_VPN_IP"
+vpn_destination_cidrs   = ["192.168.0.0/16"]
+
+# Blocked countries (ISO 3166-1-alpha-2)
+blocked_countries = []
+
+# SSM Secrets — injected by CI as TF_VAR_ssm_secrets (JSON)
+# ssm_secrets = {
+#   "db-password" = { value = "...", description = "Aurora DB password" }
+#   "jwt-secret"  = { value = "...", description = "JWT signing secret" }
+#   "api-key"     = { value = "...", description = "External API key" }
+# }

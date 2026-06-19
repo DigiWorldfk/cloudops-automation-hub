@@ -1,0 +1,98 @@
+# ──────────────────────────────────────────────
+# Terraform
+# ──────────────────────────────────────────────
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Backend partial config files — contain storage account keys / SAS tokens
+*.backend.hcl
+backend.hcl
+backend-*.hcl
+
+# Variable files that may contain secrets
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Plan files can contain secrets in resource diffs
+*.tfplan
+tfplan
+
+# ──────────────────────────────────────────────
+# Kubernetes / Helm
+# ──────────────────────────────────────────────
+# Never commit real Secret manifests
+**/secrets.yaml
+**/secret.yaml
+**/secrets-*.yaml
+# Allow example/template files
+!**/secrets.example.yaml
+!**/secret.example.yaml
+
+# kubeconfig files
+kubeconfig
+kubeconfig-*
+*.kubeconfig
+.kube/
+
+# Helm rendered output
+helm/rendered/
+helm/output/
+*.rendered.yaml
+
+# ──────────────────────────────────────────────
+# Certificates & keys
+# ──────────────────────────────────────────────
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# ──────────────────────────────────────────────
+# Environment / config files
+# ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.env
+!*.env.example
+
+# ──────────────────────────────────────────────
+# CI / pipeline secrets
+# ──────────────────────────────────────────────
+service-account*.json
+*-credentials.json
+azure-credentials.json
+sp-credentials.json
+
+# ──────────────────────────────────────────────
+# Editors & OS
+# ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# ──────────────────────────────────────────────
+# Misc build artefacts
+# ──────────────────────────────────────────────
+dist/
+build/
+__pycache__/
+node_modules/

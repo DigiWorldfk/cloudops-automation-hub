@@ -1,0 +1,241 @@
+name: Terraform CI/CD
+
+on:
+  push:
+    branches: [main, develop, "release/**"]
+    paths:
+      - "azure-aks-enterprise-platform/terraform/**"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "azure-aks-enterprise-platform/terraform/**"
+
+# Required for OIDC token exchange with Azure (ARM_USE_OIDC=true)
+permissions:
+  id-token: write   # allows requesting OIDC JWT
+  contents: read
+  pull-requests: write  # allows posting plan comments on PRs
+
+env:
+  TF_VERSION: "1.8.0"
+  CONFTEST_VERSION: "0.51.0"
+  # Azure credentials via OIDC federated identity — no long-lived client secret
+  # Configure in Azure: App Registration → Federated credentials → GitHub Actions
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"  # Instructs azurerm provider to use OIDC instead of client secret
+  # Sensitive Terraform variables — never written to disk or printed to logs
+  TF_VAR_tls_cert_keyvault_secret_id: ${{ secrets.TLS_CERT_KEYVAULT_SECRET_ID }}
+  TF_VAR_custom_domains: ${{ secrets.AFD_CUSTOM_DOMAINS }}
+  TF_VAR_mysql_admin_password: ${{ secrets.MYSQL_ADMIN_PASSWORD }}
+
+jobs:
+  # ── 1. Validate & Lint ──────────────────────────────────────────────────────
+  terraform-validate:
+    name: Validate & Lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    defaults:
+      run:
+        working-directory: azure-aks-enterprise-platform/terraform/environments/${{ matrix.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init (no backend)
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Install tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Run tflint
+        run: tflint --format compact
+
+  # ── 2. Security Policy Gate (OPA / conftest) ───────────────────────────────
+  policy-check:
+    name: Policy Check
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+    defaults:
+      run:
+        working-directory: azure-aks-enterprise-platform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Install conftest
+        run: |
+          wget -q https://github.com/open-policy-agent/conftest/releases/download/v${{ env.CONFTEST_VERSION }}/conftest_${{ env.CONFTEST_VERSION }}_Linux_x86_64.tar.gz
+          tar -xzf conftest_${{ env.CONFTEST_VERSION }}_Linux_x86_64.tar.gz
+          sudo mv conftest /usr/local/bin/
+
+      - name: Terraform Plan (dev — for policy evaluation)
+        working-directory: azure-aks-enterprise-platform/terraform/environments/dev
+        run: |
+          terraform init -backend=false
+          terraform plan -out=tfplan
+          terraform show -json tfplan > plan.json
+
+      - name: Conftest Policy Check
+        run: |
+          # Policy checks: no public IPs on databases, encryption at rest enabled,
+          # no admin credentials hardcoded, etc.
+          if [ -d "policies" ]; then
+            conftest test terraform/environments/dev/plan.json --policy policies/ --no-color
+          else
+            echo "No policies directory found — skipping conftest"
+          fi
+
+  # ── 3. Plan (on PR) ─────────────────────────────────────────────────────────
+  terraform-plan:
+    name: Plan (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    needs: policy-check
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    defaults:
+      run:
+        working-directory: azure-aks-enterprise-platform/terraform/environments/${{ matrix.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Plan
+        # Redirect stdout to suppress sensitive resource details from CI logs
+        run: terraform plan -out=tfplan -detailed-exitcode 2>&1 | grep -v "sensitive"
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: azure-aks-enterprise-platform/terraform/environments/${{ matrix.environment }}/tfplan
+          retention-days: 3
+
+  # ── 4. Apply Dev (on push to develop) ──────────────────────────────────────
+  apply-dev:
+    name: Apply → dev
+    runs-on: ubuntu-latest
+    needs: policy-check
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    # GitHub Environment "dev" — no protection rules (auto-deploy)
+    environment: dev
+    defaults:
+      run:
+        working-directory: azure-aks-enterprise-platform/terraform/environments/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+  # ── 5. Apply Staging (on push to main, after dev) ──────────────────────────
+  apply-staging:
+    name: Apply → staging
+    runs-on: ubuntu-latest
+    needs: apply-dev
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # GitHub Environment "staging" — configure with 1 required reviewer in repo settings
+    environment: staging
+    defaults:
+      run:
+        working-directory: azure-aks-enterprise-platform/terraform/environments/staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+  # ── 6. Apply Prod (manual approval gate) ───────────────────────────────────
+  apply-prod:
+    name: Apply → prod  ⚠️ Manual Approval Required
+    runs-on: ubuntu-latest
+    needs: apply-staging
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # GitHub Environment "prod" — MUST have required reviewers configured:
+    # Settings → Environments → prod → Required reviewers → add SRE team
+    # Deployment will be blocked here until an approver clicks "Review deployments"
+    environment: prod
+    defaults:
+      run:
+        working-directory: azure-aks-enterprise-platform/terraform/environments/prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Plan (final check before apply)
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **Prod Terraform apply failed.** Please investigate immediately.'
+            })

@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Gateway API resources for the WAF-backed Azure Application Gateway
+#
+# Traffic flow:
+#   Internet → App Gateway WAF_v2 (OWASP 3.2 + Bot Protection)
+#              → AGIC routes to AKS pods via HTTPRoute
+#
+# The Application Gateway is provisioned by Terraform (modules/waf).
+# AGIC (installed via the AKS addon) manages backend pools and routing rules.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: azure-application-lb
+spec:
+  controllerName: azure/application-lb
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: aks-gateway
+  namespace: default
+  annotations:
+    # References the WAF-enabled App Gateway created by Terraform (modules/waf)
+    alb.networking.azure.io/alb-namespace: azure-alb-system
+    alb.networking.azure.io/alb-name: aks-alb
+    # WAF policy is enforced at the App Gateway level by Terraform;
+    # no additional annotation needed here — all traffic is pre-screened.
+spec:
+  gatewayClassName: azure-application-lb
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          # TLS cert loaded from Key Vault by the App Gateway managed identity.
+          # Do NOT store the actual cert here — reference only the secret name.
+          - kind: Secret
+            name: tls-cert-ref   # placeholder; real cert lives in Key Vault
+            namespace: default
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: frontend-route
+  namespace: frontend
+spec:
+  parentRefs:
+    - name: aks-gateway
+      namespace: default
+  hostnames:
+    - "app.example.com"   # replace with your domain
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backend-route
+  namespace: backend
+spec:
+  parentRefs:
+    - name: aks-gateway
+      namespace: default
+  hostnames:
+    - "api.example.com"   # replace with your domain
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: backend
+          port: 80

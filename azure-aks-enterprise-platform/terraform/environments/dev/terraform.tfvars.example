@@ -1,0 +1,75 @@
+# terraform.tfvars.example — DO NOT COMMIT YOUR REAL terraform.tfvars
+# This file is committed as documentation only.
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+
+# ─── Infrastructure Tuning ────────────────────────────────────────────────────
+
+# Azure region. Override to deploy to a different region.
+location = "norwayeast"
+
+# ─── Networking — override if CIDRs clash with your existing infrastructure ───
+vnet_cidr         = "10.10.0.0/16"
+aks_subnet_cidr   = "10.10.0.0/22"  # 1022 IPs — supports up to 5 nodes × 100 pods
+appgw_subnet_cidr = "10.10.4.0/24"
+mysql_subnet_cidr = "10.10.5.0/28"
+
+# ─── AKS ──────────────────────────────────────────────────────────────────────
+kubernetes_version = "1.29"
+aks_node_count     = 2
+aks_vm_size        = "Standard_D2s_v3"
+
+# ─── Secrets ──────────────────────────────────────────────────────────────────
+
+# Key Vault secret URI for the TLS certificate.
+# Obtain after uploading your cert to Key Vault:
+#
+#   az keyvault certificate import \
+#     --vault-name kv-aks-enterprise-dev \
+#     --name app-tls \
+#     --file ./cert.pfx
+#
+#   az keyvault certificate show \
+#     --vault-name kv-aks-enterprise-dev \
+#     --name app-tls \
+#     --query "sid" -o tsv
+#
+tls_cert_keyvault_secret_id = "https://kv-aks-enterprise-dev.vault.azure.net/secrets/app-tls/CHANGE_ME"
+
+# MySQL administrator password. Use a strong random password:
+#   openssl rand -base64 24
+mysql_admin_password = "CHANGE_ME"
+
+# ─── Front Door ───────────────────────────────────────────────────────────────
+
+# Custom domains to attach to Front Door (AFD provisions TLS automatically).
+# Leave as [] to use the default *.azurefd.net hostname.
+custom_domains = []
+# custom_domains = ["dev.app.example.com"]
+
+# ─── DNS ──────────────────────────────────────────────────────────────────────
+
+# Your dev domain. After apply, run: terraform output dns_name_servers
+# Then update your registrar's nameservers to the 4 Azure DNS servers shown.
+domain_name = "dev.example.com"
+
+# Subdomain labels to create CNAME records for (all point to Front Door).
+subdomains = ["www", "api"]
+
+# Create an ALIAS record for the apex/root domain (@) → Front Door.
+apex_alias_enabled = true
+
+# ─── Email (optional) ──────────────────────────────────────────────────────────────
+
+# Leave mx_records = [] if you're not routing email through this domain.
+mx_records = []
+# mx_records = [
+#   { preference = 1,  exchange = "aspmx.l.google.com." },     # Google Workspace
+#   { preference = 5,  exchange = "alt1.aspmx.l.google.com." }
+# ]
+
+spf_record   = null
+# spf_record = "v=spf1 include:sendgrid.net ~all"
+
+dmarc_record = null
+# dmarc_record = "v=DMARC1; p=none; rua=mailto:dmarc@dev.example.com"
+

@@ -1,0 +1,34 @@
+# ─── ArgoCD RBAC Configuration ───────────────────────────────────────────────
+# Replaces the default "all users are admin" policy.
+# Roles: readonly (all teams), developer (sync non-prod apps), admin (full access).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+data:
+  policy.default: role:readonly  # Deny-by-default for unauthenticated/unmatched users
+
+  policy.csv: |
+    # Developers can view all apps and sync in non-prod namespaces
+    p, role:developer, applications, get,    */*, allow
+    p, role:developer, applications, sync,   */frontend, allow
+    p, role:developer, applications, sync,   */backend, allow
+    p, role:developer, applications, create, */*, deny
+    p, role:developer, applications, delete, */*, deny
+
+    # SREs can manage all apps including prod
+    p, role:sre, applications, *, */*, allow
+    p, role:sre, clusters,      get, *, allow
+    p, role:sre, repositories,  get, *, allow
+
+    # Admins have full access
+    p, role:admin, *, *, *, allow
+
+    # Group bindings (map Azure AD groups to roles)
+    # Replace with your actual Azure AD group object IDs
+    g, "AZURE_AD_GROUP_DEVELOPERS", role:developer
+    g, "AZURE_AD_GROUP_SRE",        role:sre
+    g, "AZURE_AD_GROUP_ADMINS",     role:admin
+
+  scopes: "[groups, email]"

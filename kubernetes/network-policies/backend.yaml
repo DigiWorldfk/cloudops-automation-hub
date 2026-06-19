@@ -1,0 +1,87 @@
+# ─── Backend NetworkPolicies ───────────────────────────────────────────────────
+# backend pods accept ingress only from frontend pods,
+# and egress to MySQL + Redis + Key Vault (HTTPS) + DNS.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-frontend
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: frontend
+          podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-backend
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MySQL Flexible Server — private VNet IP (snet-mysql range)
+    - to:
+        - ipBlock:
+            cidr: 10.10.3.0/28 # mysql_subnet_cidr — update to match
+      ports:
+        - protocol: TCP
+          port: 3306
+    # Redis private endpoint
+    - to:
+        - ipBlock:
+            cidr: 10.10.0.0/16 # VNet range — private endpoints resolve within VNet
+      ports:
+        - protocol: TCP
+          port: 6380 # Redis TLS port
+    # Azure Key Vault + ACR + other Azure APIs (HTTPS)
+    - ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090 # Prometheus metrics port

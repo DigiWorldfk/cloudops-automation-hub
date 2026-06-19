@@ -1,0 +1,129 @@
+###############################################################################
+# Docker Build & ECR Push — paths-filtered per service
+###############################################################################
+
+name: Build & Push
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'kubernetes/frontend/**'
+      - 'kubernetes/backend/**'
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+env:
+  AWS_REGION: "eu-west-1"
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend:  ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'kubernetes/frontend/**'
+            backend:
+              - 'kubernetes/backend/**'
+
+  build:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true'
+    strategy:
+      matrix:
+        service:
+          - name: frontend
+            changed: ${{ needs.detect-changes.outputs.frontend }}
+            context: kubernetes/frontend
+          - name: backend
+            changed: ${{ needs.detect-changes.outputs.backend }}
+            context: kubernetes/backend
+
+    steps:
+      - name: Skip unchanged service
+        if: matrix.service.changed != 'true'
+        run: echo "No changes in ${{ matrix.service.name }}, skipping." && exit 0
+
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ github.ref == 'refs/heads/main' && secrets.AWS_ROLE_ARN_PROD || secrets.AWS_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tags
+        id: tags
+        run: |
+          SHA=$(echo ${{ github.sha }} | head -c 8)
+          ENV=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          PROJECT="eks-enterprise-${ENV}"
+          REPO="${{ steps.ecr-login.outputs.registry }}/${PROJECT}/${{ matrix.service.name }}"
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+          echo "repo=${REPO}" >> $GITHUB_OUTPUT
+          echo "tag_sha=${REPO}:${SHA}" >> $GITHUB_OUTPUT
+          echo "tag_stable=${REPO}:${{ github.ref == 'refs/heads/main' && 'stable' || 'develop' }}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.tag_sha }}
+            ${{ steps.tags.outputs.tag_stable }}
+          cache-from: type=registry,ref=${{ steps.tags.outputs.repo }}:cache
+          cache-to: type=registry,ref=${{ steps.tags.outputs.repo }}:cache,mode=max
+
+      # ── GitOps: commit image tag update ────────────────────────────────────
+      - name: Update image tag in helm/values.yaml (develop → direct commit)
+        if: github.ref == 'refs/heads/develop'
+        run: |
+          sed -i "s|${{ matrix.service.name }}:.*|${{ matrix.service.name }}: ${{ steps.tags.outputs.sha }}|g" helm/values.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        if: github.ref == 'refs/heads/develop'
+        with:
+          commit_message: "chore(${{ matrix.service.name }}): update image tag to ${{ steps.tags.outputs.sha }}"
+          file_pattern: helm/values.yaml
+
+      - name: Update image tag in helm/values.yaml (main → PR)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git checkout -b chore/image-tag-${{ matrix.service.name }}-${{ steps.tags.outputs.sha }}
+          sed -i "s|${{ matrix.service.name }}:.*|${{ matrix.service.name }}: ${{ steps.tags.outputs.sha }}|g" helm/values.yaml
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add helm/values.yaml
+          git commit -m "chore(${{ matrix.service.name }}): update image tag to ${{ steps.tags.outputs.sha }}"
+          git push origin HEAD
+
+      - uses: actions/github-script@v7
+        if: github.ref == 'refs/heads/main'
+        with:
+          script: |
+            github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'chore(${{ matrix.service.name }}): update image tag to ${{ steps.tags.outputs.sha }}',
+              head: 'chore/image-tag-${{ matrix.service.name }}-${{ steps.tags.outputs.sha }}',
+              base: 'main',
+              body: 'Automated image tag update from build pipeline.'
+            });

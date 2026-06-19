@@ -1,0 +1,54 @@
+# terraform.tfvars.example — DO NOT COMMIT YOUR REAL terraform.tfvars
+# This file is committed as documentation only.
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+
+# ─── Infrastructure Tuning ────────────────────────────────────────────────────
+
+# Azure region. Override to deploy to a different region.
+location = "norwayeast"
+
+# ─── Networking — override if CIDRs clash with your existing infrastructure ───
+# NOTE: Staging must not overlap with dev (10.10.x.x) or prod (10.20.x.x)
+vnet_cidr         = "10.15.0.0/16"
+aks_subnet_cidr   = "10.15.0.0/22"
+appgw_subnet_cidr = "10.15.4.0/24"
+mysql_subnet_cidr = "10.15.5.0/28"
+
+# ─── AKS ──────────────────────────────────────────────────────────────────────
+kubernetes_version = "1.29"
+aks_vm_size        = "Standard_D2ds_v5"
+aks_min_node_count = 2
+aks_max_node_count = 4
+
+# ─── Secrets ──────────────────────────────────────────────────────────────────
+
+# Key Vault secret URI for the TLS certificate.
+# Obtain after uploading your cert to Key Vault:
+#
+#   az keyvault certificate import \
+#     --vault-name kv-aks-stg \
+#     --name app-tls \
+#     --file ./cert.pfx
+#
+tls_cert_keyvault_secret_id = "https://kv-aks-stg.vault.azure.net/secrets/app-tls/CHANGE_ME"
+
+# MySQL administrator password. Use a strong random password:
+#   openssl rand -base64 24
+mysql_admin_password = "CHANGE_ME"
+
+# ─── Front Door ───────────────────────────────────────────────────────────────
+
+# Custom domains to attach to Front Door (AFD provisions TLS automatically).
+# Leave as [] to use the default *.azurefd.net hostname.
+custom_domains = []
+# custom_domains = ["staging.app.example.com"]
+
+# ─── DNS ──────────────────────────────────────────────────────────────────────
+
+domain_name        = "staging.example.com"
+subdomains         = ["www", "api"]
+apex_alias_enabled = true
+
+mx_records   = []
+spf_record   = null
+dmarc_record = null

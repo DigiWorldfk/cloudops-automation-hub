@@ -1,0 +1,5 @@
+bucket         = "eks-enterprise-staging-state"
+key            = "staging/terraform.tfstate"
+region         = "eu-west-1"
+dynamodb_table = "eks-enterprise-staging-lock"
+encrypt        = true

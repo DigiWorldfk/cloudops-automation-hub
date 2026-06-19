@@ -1,0 +1,88 @@
+{
+  "name": "AKS Enterprise Platform",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+
+  "features": {
+    // Terraform
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "1.8.0",
+      "tflint": "latest",
+      "terragrunt": "none"
+    },
+    // Azure CLI
+    "ghcr.io/devcontainers/features/azure-cli:1": {
+      "version": "latest",
+      "extensions": "aks-preview"
+    },
+    // kubectl, kubelogin, helm
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "latest",
+      "minikube": "none"
+    },
+    // Docker-in-Docker for local image builds
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest"
+    },
+    // Python (for pre-commit)
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    // Node (for some tooling)
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "hashicorp.terraform",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "ms-azuretools.vscode-azurefunctions",
+        "redhat.vscode-yaml",
+        "ms-vscode.azure-account",
+        "github.vscode-github-actions",
+        "zxh404.vscode-proto3",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "terraform.experimentalFeatures.validateOnSave": true,
+        "[terraform]": {
+          "editor.defaultFormatter": "hashicorp.terraform"
+        },
+        "[yaml]": {
+          "editor.defaultFormatter": "redhat.vscode-yaml"
+        }
+      }
+    }
+  },
+
+  "remoteEnv": {
+    // These are picked up from your local shell / CI secrets
+    "ARM_CLIENT_ID": "${localEnv:ARM_CLIENT_ID}",
+    "ARM_TENANT_ID": "${localEnv:ARM_TENANT_ID}",
+    "ARM_SUBSCRIPTION_ID": "${localEnv:ARM_SUBSCRIPTION_ID}"
+    // ARM_CLIENT_SECRET — do NOT put here. Use `az login` interactively or OIDC.
+  },
+
+  "mounts": [
+    // Share local kubeconfig into the container
+    "source=${localEnv:HOME}/.kube,target=/root/.kube,type=bind,consistency=cached"
+  ],
+
+  "forwardPorts": [
+    8080,  // ArgoCD
+    9090,  // Prometheus
+    3000   // Grafana
+  ],
+
+  "portsAttributes": {
+    "8080": { "label": "ArgoCD UI" },
+    "9090": { "label": "Prometheus" },
+    "3000": { "label": "Grafana" }
+  }
+}

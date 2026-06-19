@@ -1,0 +1,47 @@
+###############################################################################
+# Helm values — common defaults (env-specific overrides in values-*.yaml)
+###############################################################################
+
+replicaCount: 2
+
+image:
+  frontend: "REPLACE_WITH_ECR_URL/eks-enterprise-prod/frontend"
+  backend:  "REPLACE_WITH_ECR_URL/eks-enterprise-prod/backend"
+  # Tags updated automatically by build pipeline:
+  frontendTag: latest
+  backendTag:  latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - frontend
+                  - backend
+          topologyKey: kubernetes.io/hostname

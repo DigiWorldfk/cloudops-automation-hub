@@ -1,0 +1,6 @@
+# Copy to backend.hcl — never commit with real values
+bucket         = "eks-enterprise-prod-state"
+key            = "prod/terraform.tfstate"
+region         = "eu-west-1"
+dynamodb_table = "eks-enterprise-prod-lock"
+encrypt        = true

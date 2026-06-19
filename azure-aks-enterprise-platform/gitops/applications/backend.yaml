@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backend
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Use dedicated project — NOT default (which has no restrictions)
+  project: aks-enterprise
+  source:
+    repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+    targetRevision: HEAD
+    path: azure-aks-enterprise-platform/kubernetes/backend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backend
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Namespaces pre-created with PSA labels — never auto-create
+      - PrunePropagationPolicy=foreground

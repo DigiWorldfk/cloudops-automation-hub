@@ -1,0 +1,73 @@
+# terraform.tfvars.example — DO NOT COMMIT YOUR REAL terraform.tfvars
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+
+# ─── Infrastructure Tuning ────────────────────────────────────────────────────
+
+# Azure region. Change to deploy to a different primary region.
+location = "norwayeast"
+
+# ─── Networking — override if CIDRs clash with your existing infrastructure ───
+vnet_cidr         = "10.20.0.0/16"
+aks_subnet_cidr   = "10.20.0.0/21"  # 2046 IPs — supports up to 10 nodes × 100 pods
+appgw_subnet_cidr = "10.20.8.0/24"
+mysql_subnet_cidr = "10.20.9.0/28"
+
+# ─── AKS ──────────────────────────────────────────────────────────────────────
+kubernetes_version = "1.29"
+aks_node_count     = 3
+aks_min_node_count = 3
+aks_max_node_count = 10
+aks_vm_size        = "Standard_D4s_v3"
+
+# ─── Secrets ──────────────────────────────────────────────────────────────────
+tls_cert_keyvault_secret_id = "https://kv-aks-enterprise-prod.vault.azure.net/secrets/app-tls/CHANGE_ME"
+
+# MySQL administrator password. Use a strong random password:
+#   openssl rand -base64 24
+mysql_admin_password = "CHANGE_ME"
+
+# ─── WAF / Security ───────────────────────────────────────────────────────────
+
+# ISO 3166-1 alpha-2 country codes to geo-block at Front Door + App Gateway WAF.
+# Leave empty ([]) to allow all countries.
+blocked_countries = []
+# blocked_countries = ["KP", "IR"]
+
+# ─── Front Door ───────────────────────────────────────────────────────────────
+
+# Custom domains to attach to Front Door (AFD provisions TLS automatically).
+custom_domains = []
+# custom_domains = ["app.example.com", "api.example.com"]
+
+# App Gateway Private Link resource ID (Premium SKU).
+# Keeps App GW origin off the public internet — traffic: AFD → Private Link → App GW.
+# Leave null to use the public IP origin during initial setup.
+appgw_private_link_resource_id = null
+
+# ─── DNS ──────────────────────────────────────────────────────────────────────
+
+# Your production domain. After `terraform apply`:
+#   1. Run: terraform output dns_name_servers
+#   2. Log in to your registrar (GoDaddy, Namecheap, etc.)
+#   3. Replace nameservers with the 4 Azure DNS servers shown
+domain_name = "example.com"
+
+# Subdomain labels to create CNAME records for (all point to Front Door).
+subdomains = ["www", "api", "app"]
+
+# Create an ALIAS record for the apex/root domain (@) → Front Door.
+apex_alias_enabled = true
+
+# ─── Email (optional) ──────────────────────────────────────────────────────────────
+
+mx_records = []
+# mx_records = [
+#   { preference = 0, exchange = "mycompany-com.mail.protection.outlook.com." }  # Microsoft 365
+# ]
+
+spf_record   = null
+# spf_record = "v=spf1 include:spf.protection.outlook.com ~all"
+
+dmarc_record = null
+# dmarc_record = "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"
+

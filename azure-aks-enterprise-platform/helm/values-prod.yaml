@@ -1,0 +1,20 @@
+## Production overrides — high availability, larger limits
+frontend:
+  replicaCount: 3
+  image:
+    tag: stable
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 20
+
+backend:
+  replicaCount: 3
+  image:
+    tag: stable
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 30
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi

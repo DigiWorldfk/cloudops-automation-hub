@@ -1,0 +1,25 @@
+# ─── PodDisruptionBudgets ─────────────────────────────────────────────────────
+# Ensures rolling updates and node drains do not take down all replicas.
+# minAvailable guarantees at least N pods stay running during disruption.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pdb-frontend
+  namespace: frontend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: pdb-backend
+  namespace: backend
+spec:
+  minAvailable: 2   # Backend HPA min=2, so always keep 2 alive
+  selector:
+    matchLabels:
+      app: backend

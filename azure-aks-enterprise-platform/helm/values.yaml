@@ -1,0 +1,59 @@
+# Default values for aks-enterprise-app.
+# Override per environment using -f values-<env>.yaml
+
+# imageRegistry — set this at deploy time, never hardcode in VCS:
+#   helm upgrade --install ... --set global.imageRegistry=<acr-name>.azurecr.io
+global:
+  imageRegistry: REGISTRY_PLACEHOLDER  # override with your ACR hostname
+  imagePullSecrets:
+    - name: acr-secret
+
+frontend:
+  replicaCount: 2
+  image:
+    repository: REGISTRY_PLACEHOLDER/frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  env:
+    NODE_ENV: production
+
+backend:
+  replicaCount: 2
+  image:
+    repository: REGISTRY_PLACEHOLDER/backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 70
+  env:
+    NODE_ENV: production
