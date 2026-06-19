@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: eks-enterprise
+  namespace: argocd
+spec:
+  description: "AWS EKS Enterprise Platform — GitOps project"
+  sourceRepos:
+    - "https://github.com/DigiWorldfk/aws-eks-enterprise-platform.git"
+  destinations:
+    - namespace: frontend
+      server: https://kubernetes.default.svc
+    - namespace: backend
+      server: https://kubernetes.default.svc
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+    - namespace: external-secrets
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+  roles:
+    - name: ci-deployer
+      description: "GitHub Actions deploy role"
+      policies:
+        - p, proj:eks-enterprise:ci-deployer, applications, sync, eks-enterprise/*, allow
+        - p, proj:eks-enterprise:ci-deployer, applications, get, eks-enterprise/*, allow

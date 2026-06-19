@@ -1,0 +1,30 @@
+# ─── ArgoCD Image Updater ─────────────────────────────────────────────────────
+# Automatically detects new container image tags in ACR and commits updated
+# image tags back to the GitOps repo — no manual tag bumps needed.
+#
+# Install: helm install argocd-image-updater argo/argocd-image-updater -n argocd
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-image-updater-config
+  namespace: argocd
+data:
+  # ACR registry configuration
+  registries.conf: |
+    registries:
+      - name: Azure Container Registry
+        api_url: https://REPLACE_WITH_ACR_NAME.azurecr.io
+        prefix: REPLACE_WITH_ACR_NAME.azurecr.io
+        ping: true
+        credentials: pullsecret:argocd/acr-pullsecret
+        insecure: false
+
+  # Application image update configuration
+  # Applied via Application annotations — see gitops/applications/
+  # Example annotations on Application objects:
+  # argocd-image-updater.argoproj.io/image-list: frontend=REPLACE_WITH_ACR_NAME.azurecr.io/frontend
+  # argocd-image-updater.argoproj.io/frontend.update-strategy: semver
+  # argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^v[0-9]+\.[0-9]+\.[0-9]+$
+  # argocd-image-updater.argoproj.io/write-back-method: git
+  # argocd-image-updater.argoproj.io/git-branch: main

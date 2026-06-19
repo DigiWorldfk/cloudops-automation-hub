@@ -1,0 +1,201 @@
+# ─── OpenTelemetry Collector — DaemonSet + Config ─────────────────────────────
+# Collects traces (OTLP), metrics (Prometheus), logs (filelog) from all pods.
+# Exports to: Azure Monitor (traces/metrics), Loki (logs), Jaeger (traces in dev).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    kubernetes.io/metadata.name: observability
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: observability
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: "otel-collector"
+              scrape_interval: 30s
+              static_configs:
+                - targets: ["localhost:8888"]
+      filelog:
+        include:
+          - /var/log/pods/*/*/*.log
+        start_at: beginning
+        include_file_path: true
+        include_file_name: false
+        operators:
+          - type: router
+            id: get-format
+            routes:
+              - output: parser-docker
+                expr: 'body matches "^\\{"'
+          - type: json_parser
+            id: parser-docker
+            output: extract-sev
+          - type: severity_parser
+            id: extract-sev
+            parse_from: attributes["log.level"]
+
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+      memory_limiter:
+        limit_mib: 400
+        spike_limit_mib: 100
+        check_interval: 5s
+      resource:
+        attributes:
+          - key: service.namespace
+            from_attribute: k8s.namespace.name
+            action: insert
+          - key: k8s.cluster.name
+            value: "${CLUSTER_NAME}"
+            action: insert
+
+    exporters:
+      # Azure Monitor — traces and metrics
+      azuremonitor:
+        connection_string: "${APPLICATIONINSIGHTS_CONNECTION_STRING}"
+      # Prometheus remote write — for Grafana
+      prometheusremotewrite:
+        endpoint: "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/write"
+      # Debug exporter — disable in prod
+      debug:
+        verbosity: normal
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch, resource]
+          exporters: [azuremonitor]
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: [memory_limiter, batch, resource]
+          exporters: [prometheusremotewrite, azuremonitor]
+        logs:
+          receivers: [filelog]
+          processors: [memory_limiter, batch, resource]
+          exporters: [azuremonitor]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: otel-collector
+  namespace: observability
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      serviceAccountName: otel-collector-sa
+      # Pod-level security context (required for hostPath log access + non-root)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.100.0
+          args:
+            - "--config=/conf/config.yaml"
+          env:
+            - name: CLUSTER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: appinsights-secret
+                  key: connection_string
+          resources:
+            requests:
+              cpu: 100m
+              memory: 200Mi
+            limits:
+              cpu: 500m
+              memory: 500Mi
+          ports:
+            - containerPort: 4317
+              protocol: TCP
+              name: otlp-grpc
+            - containerPort: 4318
+              protocol: TCP
+              name: otlp-http
+            - containerPort: 8888
+              protocol: TCP
+              name: metrics
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector-sa
+  namespace: observability
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: observability
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP

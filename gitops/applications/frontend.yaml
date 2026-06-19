@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Use dedicated project — NOT default (which has no restrictions)
+  project: aks-enterprise
+  source:
+    repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+    targetRevision: HEAD
+    path: azure-aks-enterprise-platform/kubernetes/frontend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: frontend
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Namespaces pre-created with PSA labels via namespace-security.yaml
+      # Never use CreateNamespace=true — it creates namespaces without PSA labels
+      - PrunePropagationPolicy=foreground

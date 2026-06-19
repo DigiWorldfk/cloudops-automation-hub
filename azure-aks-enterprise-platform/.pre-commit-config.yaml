@@ -1,0 +1,35 @@
+# .pre-commit-config.yaml
+# Install: pip install pre-commit && pre-commit install
+# Run all:  pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        args: ["--config", "azure-aks-enterprise-platform/.gitleaks.toml"]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.92.0
+    hooks:
+      - id: terraform_fmt
+        files: azure-aks-enterprise-platform/terraform
+      - id: terraform_validate
+        files: azure-aks-enterprise-platform/terraform
+      - id: terraform_tflint
+        files: azure-aks-enterprise-platform/terraform
+
+  - repo: https://github.com/gruntwork-io/pre-commit
+    rev: v0.1.23
+    hooks:
+      - id: helmlint
+        files: azure-aks-enterprise-platform/helm

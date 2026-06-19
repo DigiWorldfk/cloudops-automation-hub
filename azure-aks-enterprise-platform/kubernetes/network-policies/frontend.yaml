@@ -1,0 +1,61 @@
+# ─── Frontend NetworkPolicies ──────────────────────────────────────────────────
+# frontend pods receive ingress from App Gateway (AGIC) and
+# can egress only to backend pods + kube-dns.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-appgw
+  namespace: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    # App Gateway Ingress Controller sits in snet-appgw (10.x.2.0/24)
+    - from:
+        - ipBlock:
+            cidr: 10.10.2.0/24 # appgw_subnet_cidr — update to match your VNet
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-backend
+  namespace: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Backend API calls
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: backend
+          podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 8080
+    # HTTPS egress (for external API calls, CDN, etc.)
+    - ports:
+        - protocol: TCP
+          port: 443

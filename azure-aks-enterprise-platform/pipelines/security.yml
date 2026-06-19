@@ -1,0 +1,44 @@
+name: Security — Secret Scanning
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  gitleaks:
+    name: Gitleaks scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so gitleaks can diff against base branch
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: azure-aks-enterprise-platform/.gitleaks.toml
+
+  trivy-config:
+    name: Trivy misconfiguration scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy — scan Terraform configs
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: azure-aks-enterprise-platform/terraform
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+
+      - name: Trivy — scan Kubernetes manifests
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: azure-aks-enterprise-platform/kubernetes
+          exit-code: "1"
+          severity: HIGH,CRITICAL

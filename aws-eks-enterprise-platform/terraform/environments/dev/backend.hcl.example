@@ -1,0 +1,5 @@
+bucket         = "eks-enterprise-dev-state"
+key            = "dev/terraform.tfstate"
+region         = "eu-west-1"
+dynamodb_table = "eks-enterprise-dev-lock"
+encrypt        = true

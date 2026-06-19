@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app-of-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  # Root app uses default project (manages argocd namespace)
+  # All child apps use aks-enterprise project
+  project: default
+  source:
+    repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+    targetRevision: HEAD
+    path: azure-aks-enterprise-platform/gitops/applications
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Never auto-create namespaces — they must exist with PSA labels first
+      - PrunePropagationPolicy=foreground

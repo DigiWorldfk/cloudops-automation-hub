@@ -1,0 +1,46 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: aks-enterprise
+  source:
+    repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+    targetRevision: HEAD
+    path: azure-aks-enterprise-platform/kubernetes/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PrunePropagationPolicy=foreground
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway-api
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: aks-enterprise
+  source:
+    repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+    targetRevision: HEAD
+    path: azure-aks-enterprise-platform/kubernetes/gateway-api
+  destination:
+    server: https://kubernetes.default.svc
+    # Gateway API resources belong in a specific namespace, not default
+    namespace: frontend
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PrunePropagationPolicy=foreground

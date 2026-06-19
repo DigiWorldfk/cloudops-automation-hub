@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: frontend
+  labels:
+    app: frontend
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: aks-enterprise-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        app.kubernetes.io/name: frontend
+        # Required: tells the Azure Workload Identity webhook to inject OIDC token
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: frontend-sa
+      automountServiceAccountToken: true  # required for OIDC token projection
+      # Pod-level security hardening (required by PSA restricted profile)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: REGISTRY_PLACEHOLDER/frontend:IMAGE_TAG_PLACEHOLDER  # replaced by CI with short SHA (e.g. acr.azurecr.io/frontend:abc12345)
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-config
+                  key: api_url
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          # Container-level security hardening
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            capabilities:
+              drop: ["ALL"]
+      # ACR pull via AKS kubelet managed identity (AcrPull role) — no static secret needed

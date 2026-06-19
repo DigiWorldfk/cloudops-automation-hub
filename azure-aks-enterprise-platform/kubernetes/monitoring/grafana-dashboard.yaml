@@ -1,0 +1,283 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-enterprise-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  aks-enterprise.json: |
+    {
+      "title": "AKS Enterprise Platform",
+      "uid": "aks-enterprise",
+      "schemaVersion": 36,
+      "tags": ["aks", "enterprise"],
+      "panels": [
+        {
+          "id": 1,
+          "title": "Frontend RPS",
+          "type": "stat",
+          "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+          "targets": [
+            {
+              "expr": "sum(rate(http_requests_total{namespace=\"frontend\"}[1m]))",
+              "legendFormat": "RPS"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Backend p95 Latency (ms)",
+          "type": "stat",
+          "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{namespace=\"backend\"}[5m])) * 1000",
+              "legendFormat": "p95"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Pod Restarts (all namespaces)",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+          "targets": [
+            {
+              "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"frontend|backend\"}[15m])",
+              "legendFormat": "{{namespace}}/{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Node CPU Usage %",
+          "type": "timeseries",
+          "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+          "targets": [
+            {
+              "expr": "(1 - avg by(node)(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * 100",
+              "legendFormat": "{{node}}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "WAF Blocked Requests / 5m",
+          "type": "stat",
+          "gridPos": {"x": 0, "y": 12, "w": 6, "h": 4},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "yellow", "value": 10},
+                  {"color": "red", "value": 50}
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "increase(azure_applicationgateways_blockedreqcount_total[5m])",
+              "legendFormat": "Blocked"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "WAF Block Rate %",
+          "type": "gauge",
+          "gridPos": {"x": 6, "y": 12, "w": 6, "h": 4},
+          "fieldConfig": {
+            "defaults": {
+              "max": 100,
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "yellow", "value": 5},
+                  {"color": "red", "value": 10}
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "rate(azure_applicationgateways_blockedreqcount_total[10m]) / rate(azure_applicationgateways_totalrequests_total[10m]) * 100",
+              "legendFormat": "Block %"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "App Gateway Unhealthy Backends",
+          "type": "stat",
+          "gridPos": {"x": 12, "y": 12, "w": 6, "h": 4},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "red", "value": 1}
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "azure_applicationgateways_unhealthyhostcount_total",
+              "legendFormat": "Unhealthy"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "Front Door — Total Requests / min",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+          "targets": [
+            {
+              "expr": "rate(azure_frontdoor_requestcount_total[1m]) * 60",
+              "legendFormat": "Requests/min"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Front Door — End-to-End Latency (ms)",
+          "type": "timeseries",
+          "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+          "targets": [
+            {
+              "expr": "azure_frontdoor_totallatency_milliseconds",
+              "legendFormat": "Total Latency ms"
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "Front Door WAF Blocked / 5m",
+          "type": "stat",
+          "gridPos": {"x": 0, "y": 24, "w": 6, "h": 4},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "yellow", "value": 20},
+                  {"color": "red", "value": 100}
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "increase(azure_frontdoor_webapplicationfirewallrequestcount_total{action=\"Block\"}[5m])",
+              "legendFormat": "AFD Blocked"
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "title": "Front Door Origin Health",
+          "type": "stat",
+          "gridPos": {"x": 6, "y": 24, "w": 6, "h": 4},
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {"options": {"0": {"text": "UNHEALTHY", "color": "red"}}, "type": "value"},
+                {"options": {"1": {"text": "HEALTHY", "color": "green"}}, "type": "value"}
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "azure_frontdoor_originhealth_total",
+              "legendFormat": "Origin Health"
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "title": "MySQL CPU %",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 28, "w": 8, "h": 8},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "yellow", "value": 70},
+                  {"color": "red", "value": 85}
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "azure_dbformysql_flexibleservers_cpu_percent",
+              "legendFormat": "CPU %"
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "title": "MySQL Active Connections",
+          "type": "timeseries",
+          "gridPos": {"x": 8, "y": 28, "w": 8, "h": 8},
+          "targets": [
+            {
+              "expr": "azure_dbformysql_flexibleservers_active_connections",
+              "legendFormat": "Active Connections"
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "title": "MySQL Storage %",
+          "type": "gauge",
+          "gridPos": {"x": 16, "y": 28, "w": 4, "h": 8},
+          "fieldConfig": {
+            "defaults": {
+              "max": 100,
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "yellow", "value": 70},
+                  {"color": "red", "value": 85}
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "azure_dbformysql_flexibleservers_storage_percent",
+              "legendFormat": "Storage %"
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "title": "MySQL HA Replication Lag (s)",
+          "type": "stat",
+          "gridPos": {"x": 20, "y": 28, "w": 4, "h": 8},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": 0},
+                  {"color": "yellow", "value": 10},
+                  {"color": "red", "value": 60}
+                ]
+              }
+            }
+          },
+          "targets": [
+            {
+              "expr": "azure_dbformysql_flexibleservers_replication_lag_in_seconds",
+              "legendFormat": "Replication Lag s"
+            }
+          ]
+        }
+      ]
+    }

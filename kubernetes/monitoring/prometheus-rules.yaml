@@ -1,0 +1,224 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: aks-enterprise-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: frontend.rules
+      rules:
+        - alert: FrontendHighErrorRate
+          expr: |
+            rate(http_requests_total{namespace="frontend", status=~"5.."}[5m])
+            / rate(http_requests_total{namespace="frontend"}[5m]) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Frontend error rate above 5%"
+            description: "Frontend is returning >5% 5xx errors for more than 5 minutes."
+
+    - name: backend.rules
+      rules:
+        - alert: BackendHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              rate(http_request_duration_seconds_bucket{namespace="backend"}[5m])
+            ) > 2
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Backend p95 latency above 2s"
+            description: "Backend p95 response time has exceeded 2 seconds."
+
+        - alert: BackendPodNotReady
+          expr: kube_pod_status_ready{namespace="backend", condition="false"} > 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Backend pod not ready"
+            description: "One or more backend pods are not ready."
+
+    - name: aks.rules
+      rules:
+        - alert: NodeCPUPressure
+          expr: |
+            (1 - avg by(node) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Node CPU above 85%"
+
+        - alert: NodeMemoryPressure
+          expr: |
+            (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Node memory above 90%"
+
+    # ── WAF / Application Gateway rules ─────────────────────────────────────
+    # These fire on Azure Monitor metrics exported via azure-monitor-exporter
+    - name: waf.rules
+      rules:
+        - alert: WAFBlockedRequestSpike
+          expr: |
+            increase(azure_applicationgateways_blockedreqcount_total[5m]) > 50
+          for: 2m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "WAF blocked >50 requests in 5 minutes"
+            description: "Possible attack or misconfigured WAF rule. Check ApplicationGatewayFirewallLog in Log Analytics."
+
+        - alert: WAFHighBlockRate
+          expr: |
+            rate(azure_applicationgateways_blockedreqcount_total[10m])
+            / rate(azure_applicationgateways_totalrequests_total[10m]) > 0.10
+          for: 5m
+          labels:
+            severity: critical
+            team: security
+          annotations:
+            summary: "WAF blocking >10% of all requests"
+            description: "WAF block rate is abnormally high — review recent WAF logs for a potential DDoS or rule misconfiguration."
+
+        - alert: AppGatewayUnhealthyBackend
+          expr: |
+            azure_applicationgateways_unhealthyhostcount_total > 0
+          for: 3m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Application Gateway has unhealthy backend hosts"
+            description: "One or more AKS backend pods are failing the App Gateway health probe."
+
+    # ── Azure Front Door rules ────────────────────────────────────────────────
+    - name: frontdoor.rules
+      rules:
+        - alert: FrontDoorOriginDown
+          expr: |
+            azure_frontdoor_originrequeststatus_total{status="5xx"} > 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Front Door origin returning 5xx errors"
+            description: "The App Gateway origin behind Front Door is returning errors. Check App Gateway health probes."
+
+        - alert: FrontDoorHighLatency
+          expr: |
+            azure_frontdoor_totallatency_milliseconds > 2000
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Front Door total latency above 2s"
+            description: "End-to-end latency through Front Door exceeds 2000ms. Check origin response times."
+
+        - alert: FrontDoorWAFBlockSpike
+          expr: |
+            increase(azure_frontdoor_webapplicationfirewallrequestcount_total{action="Block"}[5m]) > 100
+          for: 2m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "Front Door WAF blocked >100 requests in 5 minutes"
+            description: "High Front Door WAF block rate — possible DDoS or scanning attempt at the global edge."
+
+        - alert: FrontDoorOriginHealthDegraded
+          expr: |
+            azure_frontdoor_originhealth_total < 1
+          for: 3m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Front Door origin health probe failing"
+            description: "Front Door cannot reach the App Gateway origin. Check NSG rules and App Gateway status."
+
+    # ── MySQL Flexible Server rules ──────────────────────────────────────
+    - name: mysql.rules
+      rules:
+        - alert: MySQLHighCPU
+          expr: |
+            azure_dbformysql_flexibleservers_cpu_percent > 80
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "MySQL CPU above 80%"
+            description: "MySQL Flexible Server CPU has been above 80% for 5 minutes. Consider scaling up or optimising slow queries."
+
+        - alert: MySQLHighConnections
+          expr: |
+            azure_dbformysql_flexibleservers_active_connections
+            / azure_dbformysql_flexibleservers_total_connections > 0.85
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "MySQL connection usage above 85%"
+            description: "MySQL is using more than 85% of max_connections. Risk of connection exhaustion."
+
+        - alert: MySQLStorageLow
+          expr: |
+            azure_dbformysql_flexibleservers_storage_percent > 80
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "MySQL storage above 80%"
+            description: "MySQL storage is over 80% full. auto_grow will expand; monitor for billing impact."
+
+        - alert: MySQLStorageCritical
+          expr: |
+            azure_dbformysql_flexibleservers_storage_percent > 95
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "MySQL storage above 95%"
+            description: "MySQL storage is critically full. Immediate action required."
+
+        - alert: MySQLHighIOPS
+          expr: |
+            azure_dbformysql_flexibleservers_io_consumption_percent > 90
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "MySQL IOPS above 90%"
+            description: "MySQL IOPS consumption is near the provisioned limit. Consider increasing IOPS or optimising queries."
+
+        - alert: MySQLReplicationLag
+          expr: |
+            azure_dbformysql_flexibleservers_replication_lag_in_seconds > 60
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "MySQL HA replication lag above 60s"
+            description: "The standby replica is more than 60 seconds behind the primary. High-availability failover may be unreliable."

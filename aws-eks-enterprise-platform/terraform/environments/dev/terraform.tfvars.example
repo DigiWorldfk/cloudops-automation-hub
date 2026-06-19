@@ -1,0 +1,6 @@
+aws_region         = "eu-west-1"
+domain_name        = "dev.REPLACE_WITH_YOUR_DOMAIN"
+github_org         = "DigiWorldfk"
+github_repo        = "aws-eks-enterprise-platform"
+db_master_username = "dbadmin"
+db_master_password = "REPLACE_WITH_SECURE_PASSWORD"

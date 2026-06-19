@@ -1,0 +1,13 @@
+# backend.hcl — DO NOT COMMIT THIS FILE (it is gitignored)
+# Copy this to backend.hcl and fill in the real values from your Azure storage account.
+#
+# Usage:
+#   terraform init -backend-config=backend.hcl
+
+resource_group_name  = "rg-tfstate-prod"        # Resource group holding the storage account
+storage_account_name = "CHANGE_ME"              # Output of: terraform -chdir=../../bootstrap output storage_account_names
+container_name       = "tfstate"
+key                  = "aks-enterprise/prod.tfstate"
+
+# Optional: use a SAS token or access key instead of the default Azure AD auth
+# access_key = "CHANGE_ME"

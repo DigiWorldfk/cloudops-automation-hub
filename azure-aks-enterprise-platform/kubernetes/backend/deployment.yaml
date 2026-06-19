@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: backend
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: aks-enterprise-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        # Required: tells the Azure Workload Identity webhook to inject OIDC token
+        azure.workload.identity/use: "true"
+    spec:
+      # Workload Identity SA — annotated with azure.workload.identity/client-id
+      serviceAccountName: backend-sa
+      automountServiceAccountToken: true  # required for OIDC token projection
+      # Pod-level security hardening (required by PSA restricted profile)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: REGISTRY_PLACEHOLDER/backend:IMAGE_TAG_PLACEHOLDER  # replaced by CI with short SHA (e.g. acr.azurecr.io/backend:abc12345)
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-secrets     # synced from Key Vault via CSI driver
+                  key: DATABASE_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: jwt_secret
+          volumeMounts:
+            - name: mysql-secrets-store
+              mountPath: /mnt/secrets/mysql
+              readOnly: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          # Container-level security hardening
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+      # ACR pull via AKS kubelet managed identity (AcrPull role) — no static secret needed
+      volumes:
+        - name: mysql-secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: mysql-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: backend
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: backend
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 15
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

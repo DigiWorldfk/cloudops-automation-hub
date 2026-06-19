@@ -1,0 +1,38 @@
+---
+# ─── Kubernetes Policy Manifests ──────────────────────────────────────────────
+# Manages: NetworkPolicies, PSA namespace labels, ResourceQuotas,
+#          LimitRanges, PodDisruptionBudgets, ServiceAccounts + RBAC
+#
+# IMPORTANT: This app must sync BEFORE frontend/backend apps to ensure
+#            namespaces have PSA labels before workload pods are scheduled.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8s-policy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"  # Sync before all workload apps
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: aks-enterprise
+  sources:
+    - repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+      targetRevision: HEAD
+      path: azure-aks-enterprise-platform/kubernetes/policy
+    - repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+      targetRevision: HEAD
+      path: azure-aks-enterprise-platform/kubernetes/network-policies
+    - repoURL: https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+      targetRevision: HEAD
+      path: azure-aks-enterprise-platform/kubernetes/rbac
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd  # multi-source app; actual resources deploy to their own namespaces
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true

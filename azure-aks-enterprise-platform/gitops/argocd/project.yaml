@@ -1,0 +1,91 @@
+# ─── ArgoCD AppProject — restricts what apps can deploy and where ─────────────
+# Using `default` project is dangerous: it has no namespace or resource
+# restrictions. This dedicated project enforces least privilege:
+# - Only specific destination namespaces are allowed
+# - Only specific resource types are whitelisted
+# - Cluster-level resources (ClusterRole, CRD, etc.) are blocked unless listed
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: aks-enterprise
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "AKS Enterprise Platform — all workload applications"
+
+  # Only allow syncing from this repository
+  sourceRepos:
+    - https://github.com/DigiWorldfk/DigitalFreelanceWorld.git
+
+  # Allowed destination clusters and namespaces
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: frontend
+    - server: https://kubernetes.default.svc
+      namespace: backend
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+    - server: https://kubernetes.default.svc
+      namespace: observability
+    - server: https://kubernetes.default.svc
+      namespace: velero
+    # Explicitly NOT: kube-system, argocd, default — apps cannot touch these
+
+  # Whitelist only safe namespace-scoped resource types
+  namespaceResourceWhitelist:
+    - group: "apps"
+      kind: Deployment
+    - group: "apps"
+      kind: ReplicaSet
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: "autoscaling"
+      kind: HorizontalPodAutoscaler
+    - group: "policy"
+      kind: PodDisruptionBudget
+    - group: "networking.k8s.io"
+      kind: NetworkPolicy
+    - group: "monitoring.coreos.com"
+      kind: PrometheusRule
+    - group: "monitoring.coreos.com"
+      kind: ServiceMonitor
+    - group: "secrets-store.csi.x-k8s.io"
+      kind: SecretProviderClass
+    - group: "gateway.networking.k8s.io"
+      kind: Gateway
+    - group: "gateway.networking.k8s.io"
+      kind: HTTPRoute
+
+  # Cluster-scoped resources must be explicitly listed — none for workloads
+  clusterResourceWhitelist: []
+
+  # Deny orphaned resources from being left in cluster after pruning
+  orphanedResources:
+    warn: true
+
+  # RBAC roles within this project
+  roles:
+    - name: readonly
+      description: "View-only access to all apps in this project"
+      policies:
+        - p, proj:aks-enterprise:readonly, applications, get, aks-enterprise/*, allow
+      groups:
+        - AZURE_AD_GROUP_DEVELOPERS
+
+    - name: deployer
+      description: "Can sync but not delete apps"
+      policies:
+        - p, proj:aks-enterprise:deployer, applications, get,    aks-enterprise/*, allow
+        - p, proj:aks-enterprise:deployer, applications, sync,   aks-enterprise/*, allow
+        - p, proj:aks-enterprise:deployer, applications, create, aks-enterprise/*, deny
+        - p, proj:aks-enterprise:deployer, applications, delete, aks-enterprise/*, deny
+      groups:
+        - AZURE_AD_GROUP_SRE
