@@ -21,7 +21,7 @@ aks_vm_size        = "Standard_D4s_v3"
 
 # Required in production: replace the documentation-only placeholder with the approved VPN,
 # bastion, and CI/CD egress CIDRs that should be allowed to reach the AKS API server.
-api_server_authorized_ip_ranges = ["203.0.113.0/32"]
+# Uncomment and replace with your real allowlist before running a production plan/apply.
 # api_server_authorized_ip_ranges = ["198.51.100.10/32", "198.51.100.11/32"]
 
 # ─── Secrets ──────────────────────────────────────────────────────────────────
