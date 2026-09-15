@@ -65,11 +65,19 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Scan repository configuration
+      - name: Scan production Terraform configuration
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: .
+          scan-ref: terraform/environments/prod
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+
+      - name: Scan Kubernetes manifests
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: kubernetes
           exit-code: "1"
           severity: HIGH,CRITICAL
 
