@@ -1,4 +1,5 @@
 import docker
+import os
 from typing import List, Optional
 import logging
 
@@ -6,6 +7,8 @@ logger = logging.getLogger(__name__)
 
 
 def _client() -> docker.DockerClient:
+    if os.getenv("DOCKER_OPERATIONS_ENABLED", "false").strip().lower() not in {"1", "true", "yes", "on"}:
+        raise RuntimeError("Docker operations are disabled for this deployment")
     return docker.from_env()
 
 

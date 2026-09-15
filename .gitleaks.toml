@@ -32,10 +32,10 @@ description = "Allowlist for placeholder values and examples"
 regexes = [
   "change-me",
   "xxxxxxxx",
-  "AKIA[0-9A-Z]{16}",           # placeholder format only
+  "PLACEHOLDER_AWS_ACCESS_KEY", # placeholder text only
   "YourPasswordHere",
   "JBSWY3DPEHPK3PXP",           # example TOTP seed from docs
-  "AKIAxxxxxxxxxxxxxxxx",
+  "AWS_ACCESS_KEY_ID=",
 ]
 paths = [
   ".env.example",

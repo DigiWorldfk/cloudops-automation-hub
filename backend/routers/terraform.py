@@ -7,8 +7,11 @@ from services.terraform_runner import (
     list_workspaces, terraform_init, terraform_plan_stream,
     terraform_apply, terraform_destroy,
 )
+from errors import audit_error, operation_error, redact_text
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/workspaces")
@@ -23,13 +26,13 @@ async def init_workspace(body: TerraformWorkspaceRequest, user: dict = Depends(r
         status = "OK" if result["returncode"] == 0 else "FAIL"
         await log_activity(user["username"], "TF_INIT", f"tf:{body.workspace}", status)
         if result["returncode"] != 0:
-            raise HTTPException(status_code=500, detail=result["stderr"])
+            raise HTTPException(status_code=500, detail=redact_text(result["stderr"]))
         return result
     except HTTPException:
         raise
     except Exception as e:
-        await log_activity(user["username"], "TF_INIT", f"tf:{body.workspace}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "TF_INIT", f"tf:{body.workspace}", "FAIL", audit_error(e))
+        raise operation_error(logger, "initialize Terraform workspace", e)
 
 
 @router.post("/plan")
@@ -38,7 +41,7 @@ async def plan_workspace(body: TerraformWorkspaceRequest, user: dict = Depends(r
 
     async def _generate():
         async for line in await terraform_plan_stream(body.workspace):
-            yield f"data: {line}\n\n"
+            yield f"data: {redact_text(line)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(_generate(), media_type="text/event-stream")
@@ -53,13 +56,13 @@ async def apply_workspace(body: TerraformApplyRequest, user: dict = Depends(requ
         status = "OK" if result["returncode"] == 0 else "FAIL"
         await log_activity(user["username"], "TF_APPLY", f"tf:{body.workspace}", status)
         if result["returncode"] != 0:
-            raise HTTPException(status_code=500, detail=result["stderr"])
+            raise HTTPException(status_code=500, detail=redact_text(result["stderr"]))
         return result
     except HTTPException:
         raise
     except Exception as e:
-        await log_activity(user["username"], "TF_APPLY", f"tf:{body.workspace}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "TF_APPLY", f"tf:{body.workspace}", "FAIL", audit_error(e))
+        raise operation_error(logger, "apply Terraform workspace", e)
 
 
 @router.post("/destroy")
@@ -71,10 +74,10 @@ async def destroy_workspace(body: TerraformDestroyRequest, user: dict = Depends(
         status = "OK" if result["returncode"] == 0 else "FAIL"
         await log_activity(user["username"], "TF_DESTROY", f"tf:{body.workspace}", status)
         if result["returncode"] != 0:
-            raise HTTPException(status_code=500, detail=result["stderr"])
+            raise HTTPException(status_code=500, detail=redact_text(result["stderr"]))
         return result
     except HTTPException:
         raise
     except Exception as e:
-        await log_activity(user["username"], "TF_DESTROY", f"tf:{body.workspace}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "TF_DESTROY", f"tf:{body.workspace}", "FAIL", audit_error(e))
+        raise operation_error(logger, "destroy Terraform workspace", e)

@@ -29,6 +29,7 @@ services:
     env_file: .env
     environment:
       - KUBECONFIG=/app/kubeconfig.yaml
+      - DOCKER_OPERATIONS_ENABLED=false
     expose:
       - "8000"
     depends_on: []
@@ -36,7 +37,6 @@ services:
     volumes:
       - cloudops_data:/app/data
       - terraform_workspaces:/app/terraform-workspaces
-      - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker operations
       - ./k8s/kubeconfig-local.yaml:/app/kubeconfig.yaml:ro
     networks:
       - cloudops

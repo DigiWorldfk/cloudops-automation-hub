@@ -35,13 +35,13 @@ class ActivityEntry(BaseModel):
 # ── Azure ─────────────────────────────────────────────────────────────────────
 
 class AzureVMCreateRequest(BaseModel):
-    name: str
-    resource_group: str
+    name: str = Field(..., min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+    resource_group: str = Field(..., min_length=1, max_length=90, pattern=r"^[A-Za-z0-9._()-]+$")
     location: str = "eastus"
     vm_size: str = "Standard_B2s"
     image: str = "UbuntuLTS"
-    admin_username: str
-    admin_password: str = Field(..., min_length=12)
+    admin_username: str = Field(..., min_length=1, max_length=32, pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")
+    admin_password: str = Field(..., min_length=16, max_length=128)
 
 class AzureVMResizeRequest(BaseModel):
     vm_size: str
@@ -126,7 +126,7 @@ class K8sClusterUpgradeRequest(BaseModel):
     node_name: str
 
 class K8sNamespaceCreateRequest(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=63, pattern=r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
 class HelmInstallRequest(BaseModel):
     chart: str

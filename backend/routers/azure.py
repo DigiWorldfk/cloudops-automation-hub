@@ -9,8 +9,11 @@ from services.azure_client import (
     azure_start_vm, azure_stop_vm, azure_resize_vm,
     azure_snapshot_vm, azure_expand_disk,
 )
+from errors import audit_error, operation_error
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/vms")
@@ -18,7 +21,7 @@ async def list_vms(user: dict = Depends(get_current_user)):
     try:
         return await azure_list_vms()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "list Azure VMs", e)
 
 
 @router.post("/vms")
@@ -31,8 +34,8 @@ async def create_vm(body: AzureVMCreateRequest, user: dict = Depends(require_rol
         await log_activity(user["username"], "CREATE_VM", f"azure:{body.resource_group}/{body.name}", "OK", str(result))
         return result
     except Exception as e:
-        await log_activity(user["username"], "CREATE_VM", f"azure:{body.resource_group}/{body.name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "CREATE_VM", f"azure:{body.resource_group}/{body.name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "create Azure VM", e)
 
 
 @router.delete("/vms/{resource_group}/{name}")
@@ -42,8 +45,8 @@ async def delete_vm(resource_group: str, name: str, user: dict = Depends(require
         await log_activity(user["username"], "DELETE_VM", f"azure:{resource_group}/{name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "DELETE_VM", f"azure:{resource_group}/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "DELETE_VM", f"azure:{resource_group}/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "delete Azure VM", e)
 
 
 @router.post("/vms/{resource_group}/{name}/start")
@@ -53,8 +56,8 @@ async def start_vm(resource_group: str, name: str, user: dict = Depends(require_
         await log_activity(user["username"], "START_VM", f"azure:{resource_group}/{name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "START_VM", f"azure:{resource_group}/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "START_VM", f"azure:{resource_group}/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "start Azure VM", e)
 
 
 @router.post("/vms/{resource_group}/{name}/stop")
@@ -64,8 +67,8 @@ async def stop_vm(resource_group: str, name: str, user: dict = Depends(require_r
         await log_activity(user["username"], "STOP_VM", f"azure:{resource_group}/{name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "STOP_VM", f"azure:{resource_group}/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "STOP_VM", f"azure:{resource_group}/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "stop Azure VM", e)
 
 
 @router.post("/vms/{resource_group}/{name}/resize")
@@ -76,8 +79,8 @@ async def resize_vm(resource_group: str, name: str, body: AzureVMResizeRequest,
         await log_activity(user["username"], "RESIZE_VM", f"azure:{resource_group}/{name}", "OK", body.vm_size)
         return result
     except Exception as e:
-        await log_activity(user["username"], "RESIZE_VM", f"azure:{resource_group}/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "RESIZE_VM", f"azure:{resource_group}/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "resize Azure VM", e)
 
 
 @router.post("/vms/{resource_group}/{name}/snapshot")
@@ -88,8 +91,8 @@ async def snapshot_vm(resource_group: str, name: str, user: dict = Depends(requi
         await log_activity(user["username"], "SNAPSHOT_VM", f"azure:{resource_group}/{name}", "OK", snap_name)
         return result
     except Exception as e:
-        await log_activity(user["username"], "SNAPSHOT_VM", f"azure:{resource_group}/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "SNAPSHOT_VM", f"azure:{resource_group}/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "snapshot Azure VM", e)
 
 
 @router.post("/disks/{resource_group}/{disk_name}/expand")
@@ -100,5 +103,5 @@ async def expand_disk(resource_group: str, disk_name: str, body: AzureDiskExpand
         await log_activity(user["username"], "EXPAND_DISK", f"azure:{resource_group}/{disk_name}", "OK", f"{body.size_gb}GB")
         return result
     except Exception as e:
-        await log_activity(user["username"], "EXPAND_DISK", f"azure:{resource_group}/{disk_name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "EXPAND_DISK", f"azure:{resource_group}/{disk_name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "expand Azure disk", e)
