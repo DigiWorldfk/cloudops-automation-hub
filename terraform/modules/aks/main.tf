@@ -76,7 +76,7 @@ resource "azurerm_kubernetes_cluster" "main" {
     precondition {
       condition = var.environment != "prod" || (
         length(var.api_server_authorized_ip_ranges) > 0 &&
-        var.api_server_authorized_ip_ranges != local.scan_only_api_server_authorized_ip_ranges
+        !contains(var.api_server_authorized_ip_ranges, local.scan_only_api_server_authorized_ip_ranges[0])
       )
       error_message = "Production AKS clusters must replace the scan-only placeholder with approved VPN, bastion, or CI/CD CIDRs."
     }
