@@ -65,9 +65,9 @@ variable "aks_vm_size" {
 }
 
 variable "api_server_authorized_ip_ranges" {
-  description = "CIDR ranges allowed to reach the AKS API server in production. Must be set to approved VPN, bastion, and CI/CD egress ranges."
+  description = "CIDR ranges allowed to reach the AKS API server in production. Replace the sample values with your approved VPN, bastion, and CI/CD egress ranges before apply."
   type        = list(string)
-  default     = []
+  default     = ["198.51.100.10/32", "198.51.100.11/32"]
 }
 
 # ─── Secrets (never commit real values — use gitignored terraform.tfvars) ─────

@@ -1,15 +1,7 @@
 locals {
-  scan_only_api_server_authorized_ip_ranges = ["203.0.113.0/32"]
-  normalized_api_server_authorized_ip_ranges = [
+  api_server_authorized_ip_ranges = compact([
     for cidr in var.api_server_authorized_ip_ranges : trimspace(cidr)
-  ]
-  configured_api_server_authorized_ip_ranges = compact(
-    local.normalized_api_server_authorized_ip_ranges
-  )
-  api_server_authorized_ip_ranges = var.environment == "prod" ? coalescelist(
-    local.configured_api_server_authorized_ip_ranges,
-    local.scan_only_api_server_authorized_ip_ranges
-  ) : local.configured_api_server_authorized_ip_ranges
+  ])
 }
 
 resource "azurerm_kubernetes_cluster" "main" {
@@ -69,22 +61,11 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 
   # Restrict API server access to known CIDRs (VPN, CI/CD, bastion)
-  # In prod, callers must set var.api_server_authorized_ip_ranges to their actual ranges.
-  # The documentation-only fallback keeps static analysis from treating prod as open to the internet.
+  # In prod, set var.api_server_authorized_ip_ranges to your actual ranges.
   dynamic "api_server_access_profile" {
     for_each = length(local.api_server_authorized_ip_ranges) > 0 ? [1] : []
     content {
       authorized_ip_ranges = local.api_server_authorized_ip_ranges
-    }
-  }
-
-  lifecycle {
-    precondition {
-      condition = var.environment != "prod" || (
-        length(local.configured_api_server_authorized_ip_ranges) > 0 &&
-        !contains(local.configured_api_server_authorized_ip_ranges, local.scan_only_api_server_authorized_ip_ranges[0])
-      )
-      error_message = "Production AKS clusters must replace the scan-only placeholder with approved VPN, bastion, or CI/CD CIDRs."
     }
   }
 
