@@ -8,8 +8,11 @@ from services.aws_client import (
     aws_snapshot_instance, aws_create_volume,
     aws_run_patch_baseline, aws_patch_status, aws_get_costs,
 )
+from errors import audit_error, operation_error
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/instances")
@@ -17,7 +20,7 @@ async def list_instances(user: dict = Depends(get_current_user)):
     try:
         return await aws_list_instances()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "list AWS instances", e)
 
 
 @router.post("/instances")
@@ -30,8 +33,8 @@ async def create_instance(body: AWSInstanceCreateRequest, user: dict = Depends(r
         await log_activity(user["username"], "CREATE_EC2", f"aws:{body.name_tag}", "OK", str(result))
         return result
     except Exception as e:
-        await log_activity(user["username"], "CREATE_EC2", f"aws:{body.name_tag}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "CREATE_EC2", f"aws:{body.name_tag}", "FAIL", audit_error(e))
+        raise operation_error(logger, "create AWS instance", e)
 
 
 @router.delete("/instances/{instance_id}")
@@ -41,8 +44,8 @@ async def terminate_instance(instance_id: str, user: dict = Depends(require_role
         await log_activity(user["username"], "TERMINATE_EC2", f"aws:{instance_id}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "TERMINATE_EC2", f"aws:{instance_id}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "TERMINATE_EC2", f"aws:{instance_id}", "FAIL", audit_error(e))
+        raise operation_error(logger, "terminate AWS instance", e)
 
 
 @router.post("/instances/{instance_id}/start")
@@ -52,8 +55,8 @@ async def start_instance(instance_id: str, user: dict = Depends(require_role("ad
         await log_activity(user["username"], "START_EC2", f"aws:{instance_id}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "START_EC2", f"aws:{instance_id}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "START_EC2", f"aws:{instance_id}", "FAIL", audit_error(e))
+        raise operation_error(logger, "start AWS instance", e)
 
 
 @router.post("/instances/{instance_id}/stop")
@@ -63,8 +66,8 @@ async def stop_instance(instance_id: str, user: dict = Depends(require_role("adm
         await log_activity(user["username"], "STOP_EC2", f"aws:{instance_id}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "STOP_EC2", f"aws:{instance_id}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "STOP_EC2", f"aws:{instance_id}", "FAIL", audit_error(e))
+        raise operation_error(logger, "stop AWS instance", e)
 
 
 @router.post("/instances/{instance_id}/resize")
@@ -75,8 +78,8 @@ async def resize_instance(instance_id: str, body: AWSInstanceResizeRequest,
         await log_activity(user["username"], "RESIZE_EC2", f"aws:{instance_id}", "OK", body.instance_type)
         return result
     except Exception as e:
-        await log_activity(user["username"], "RESIZE_EC2", f"aws:{instance_id}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "RESIZE_EC2", f"aws:{instance_id}", "FAIL", audit_error(e))
+        raise operation_error(logger, "resize AWS instance", e)
 
 
 @router.post("/instances/{instance_id}/snapshot")
@@ -86,8 +89,8 @@ async def snapshot_instance(instance_id: str, user: dict = Depends(require_role(
         await log_activity(user["username"], "SNAPSHOT_EC2", f"aws:{instance_id}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "SNAPSHOT_EC2", f"aws:{instance_id}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "SNAPSHOT_EC2", f"aws:{instance_id}", "FAIL", audit_error(e))
+        raise operation_error(logger, "snapshot AWS instance", e)
 
 
 @router.post("/volumes")
@@ -97,8 +100,8 @@ async def create_volume(body: AWSVolumeCreateRequest, user: dict = Depends(requi
         await log_activity(user["username"], "CREATE_VOLUME", f"aws:{body.instance_id}", "OK", f"{body.size_gb}GB")
         return result
     except Exception as e:
-        await log_activity(user["username"], "CREATE_VOLUME", f"aws:{body.instance_id}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "CREATE_VOLUME", f"aws:{body.instance_id}", "FAIL", audit_error(e))
+        raise operation_error(logger, "create AWS volume", e)
 
 
 @router.post("/instances/{instance_id}/patch")
@@ -108,8 +111,8 @@ async def patch_instance(instance_id: str, user: dict = Depends(require_role("ad
         await log_activity(user["username"], "PATCH_EC2", f"aws:{instance_id}", "OK", result.get("command_id"))
         return result
     except Exception as e:
-        await log_activity(user["username"], "PATCH_EC2", f"aws:{instance_id}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "PATCH_EC2", f"aws:{instance_id}", "FAIL", audit_error(e))
+        raise operation_error(logger, "patch AWS instance", e)
 
 
 @router.get("/instances/{instance_id}/patch-status")
@@ -118,7 +121,7 @@ async def get_patch_status(instance_id: str, command_id: str = Query(...),
     try:
         return await aws_patch_status(instance_id, command_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "get AWS patch status", e)
 
 
 @router.get("/costs")
@@ -126,4 +129,4 @@ async def get_costs(period_days: int = Query(30, ge=1, le=365), user: dict = Dep
     try:
         return await aws_get_costs(period_days)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "get AWS costs", e)

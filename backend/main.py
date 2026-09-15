@@ -2,12 +2,27 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from routers import auth, dashboard, azure, aws, docker_ops, terraform, kubernetes_ops, activity, ai_agent
 from db.database import init_db
+from config import allowed_origins, validate_runtime_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+class SameOriginMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.url.path.startswith("/api/"):
+            origin = request.headers.get("origin")
+            if origin:
+                configured = set(allowed_origins())
+                forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",", 1)[0].strip()
+                request_origin = f"{forwarded_proto}://{request.headers.get('host')}"
+                if origin.rstrip("/") not in configured and origin.rstrip("/") != request_origin.rstrip("/"):
+                    return JSONResponse(status_code=403, content={"detail": "Cross-origin request rejected"})
+        return await call_next(request)
 
 app = FastAPI(
     title="CloudOps Automation Hub",
@@ -20,15 +35,17 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
 )
+app.add_middleware(SameOriginMiddleware)
 
 
 @app.on_event("startup")
 async def startup():
+    validate_runtime_config()
     await init_db()
     logger.info("CloudOps Automation Hub started")
 

@@ -19,7 +19,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: azure-aks-enterprise-platform/.gitleaks.toml
+          GITLEAKS_CONFIG: .gitleaks.toml
 
   trivy-config:
     name: Trivy misconfiguration scan
@@ -31,7 +31,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: azure-aks-enterprise-platform/terraform
+          scan-ref: .
           exit-code: "1"
           severity: HIGH,CRITICAL
 
@@ -39,6 +39,6 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: azure-aks-enterprise-platform/kubernetes
+          scan-ref: .
           exit-code: "1"
           severity: HIGH,CRITICAL

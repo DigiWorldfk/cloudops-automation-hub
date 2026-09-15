@@ -14,8 +14,11 @@ from services.k8s_client import (
     k8s_cordon_node, k8s_uncordon_node, k8s_drain_node, k8s_upgrade_cluster,
     helm_list_releases, helm_install, helm_upgrade, helm_rollback,
 )
+from errors import audit_error, operation_error, redact_text
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/namespaces")
@@ -23,7 +26,7 @@ async def list_namespaces(user: dict = Depends(get_current_user)):
     try:
         return await k8s_list_namespaces()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "list Kubernetes namespaces", e)
 
 
 @router.post("/namespaces")
@@ -33,8 +36,8 @@ async def create_namespace(body: K8sNamespaceCreateRequest, user: dict = Depends
         await log_activity(user["username"], "CREATE_NAMESPACE", f"k8s:{body.name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "CREATE_NAMESPACE", f"k8s:{body.name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "CREATE_NAMESPACE", f"k8s:{body.name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "create Kubernetes namespace", e)
 
 
 @router.delete("/namespaces/{name}")
@@ -44,8 +47,8 @@ async def delete_namespace(name: str, user: dict = Depends(require_role("admin")
         await log_activity(user["username"], "DELETE_NAMESPACE", f"k8s:{name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "DELETE_NAMESPACE", f"k8s:{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "DELETE_NAMESPACE", f"k8s:{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "delete Kubernetes namespace", e)
 
 
 @router.get("/pods")
@@ -53,7 +56,7 @@ async def list_pods(namespace: str = Query("default"), user: dict = Depends(get_
     try:
         return await k8s_list_pods(namespace)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "list Kubernetes pods", e)
 
 
 @router.get("/pods/{namespace}/{pod_name}/logs")
@@ -62,9 +65,9 @@ async def pod_logs(namespace: str, pod_name: str,
                    user: dict = Depends(get_current_user)):
     try:
         logs = await k8s_pod_logs(namespace, pod_name, tail)
-        return {"logs": logs}
+        return {"logs": redact_text(logs)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "get Kubernetes pod logs", e)
 
 
 @router.get("/deployments")
@@ -72,7 +75,7 @@ async def list_deployments(namespace: str = Query("default"), user: dict = Depen
     try:
         return await k8s_list_deployments(namespace)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "list Kubernetes deployments", e)
 
 
 @router.post("/deployments/{namespace}/{name}/scale")
@@ -83,8 +86,8 @@ async def scale_deployment(namespace: str, name: str, body: K8sScaleRequest,
         await log_activity(user["username"], "SCALE_DEPLOYMENT", f"k8s:{namespace}/{name}", "OK", f"replicas={body.replicas}")
         return result
     except Exception as e:
-        await log_activity(user["username"], "SCALE_DEPLOYMENT", f"k8s:{namespace}/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "SCALE_DEPLOYMENT", f"k8s:{namespace}/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "scale Kubernetes deployment", e)
 
 
 @router.patch("/deployments/{namespace}/{name}/resources")
@@ -100,8 +103,8 @@ async def patch_deployment_resources(namespace: str, name: str, body: K8sResourc
                            f"cpu={body.cpu_limit} mem={body.memory_limit}")
         return result
     except Exception as e:
-        await log_activity(user["username"], "PATCH_RESOURCES", f"k8s:{namespace}/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "PATCH_RESOURCES", f"k8s:{namespace}/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "patch Kubernetes deployment resources", e)
 
 
 @router.get("/cluster/info")
@@ -109,7 +112,7 @@ async def get_cluster_info(user: dict = Depends(get_current_user)):
     try:
         return await k8s_get_cluster_info()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "get Kubernetes cluster info", e)
 
 
 @router.get("/cluster/versions")
@@ -117,7 +120,7 @@ async def get_available_versions(user: dict = Depends(get_current_user)):
     try:
         return await k8s_get_available_versions()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "get Kubernetes versions", e)
 
 
 @router.post("/nodes/{name}/cordon")
@@ -127,8 +130,8 @@ async def cordon_node(name: str, user: dict = Depends(require_role("admin", "eng
         await log_activity(user["username"], "CORDON_NODE", f"k8s:node/{name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "CORDON_NODE", f"k8s:node/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "CORDON_NODE", f"k8s:node/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "cordon Kubernetes node", e)
 
 
 @router.post("/nodes/{name}/uncordon")
@@ -138,8 +141,8 @@ async def uncordon_node(name: str, user: dict = Depends(require_role("admin", "e
         await log_activity(user["username"], "UNCORDON_NODE", f"k8s:node/{name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "UNCORDON_NODE", f"k8s:node/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "UNCORDON_NODE", f"k8s:node/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "uncordon Kubernetes node", e)
 
 
 @router.post("/nodes/{name}/drain")
@@ -149,8 +152,8 @@ async def drain_node(name: str, user: dict = Depends(require_role("admin"))):
         await log_activity(user["username"], "DRAIN_NODE", f"k8s:node/{name}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "DRAIN_NODE", f"k8s:node/{name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "DRAIN_NODE", f"k8s:node/{name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "drain Kubernetes node", e)
 
 
 @router.post("/cluster/upgrade")
@@ -163,8 +166,8 @@ async def upgrade_cluster(body: K8sClusterUpgradeRequest,
         return result
     except Exception as e:
         await log_activity(user["username"], "UPGRADE_CLUSTER",
-                           f"k8s:node/{body.node_name}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+                           f"k8s:node/{body.node_name}", "FAIL", audit_error(e))
+        raise operation_error(logger, "upgrade Kubernetes cluster", e)
 
 
 @router.get("/helm/releases")
@@ -172,7 +175,7 @@ async def list_helm_releases(namespace: str = Query("default"), user: dict = Dep
     try:
         return await helm_list_releases(namespace)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise operation_error(logger, "list Helm releases", e)
 
 
 @router.post("/helm/install")
@@ -182,8 +185,8 @@ async def install_chart(body: HelmInstallRequest, user: dict = Depends(require_r
         await log_activity(user["username"], "HELM_INSTALL", f"k8s:{body.namespace}/{body.release}", "OK", body.chart)
         return result
     except Exception as e:
-        await log_activity(user["username"], "HELM_INSTALL", f"k8s:{body.namespace}/{body.release}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "HELM_INSTALL", f"k8s:{body.namespace}/{body.release}", "FAIL", audit_error(e))
+        raise operation_error(logger, "install Helm chart", e)
 
 
 @router.post("/helm/upgrade")
@@ -193,8 +196,8 @@ async def upgrade_chart(body: HelmUpgradeRequest, user: dict = Depends(require_r
         await log_activity(user["username"], "HELM_UPGRADE", f"k8s:{body.namespace}/{body.release}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "HELM_UPGRADE", f"k8s:{body.namespace}/{body.release}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "HELM_UPGRADE", f"k8s:{body.namespace}/{body.release}", "FAIL", audit_error(e))
+        raise operation_error(logger, "upgrade Helm chart", e)
 
 
 @router.post("/helm/rollback")
@@ -204,5 +207,5 @@ async def rollback_chart(body: HelmRollbackRequest, user: dict = Depends(require
         await log_activity(user["username"], "HELM_ROLLBACK", f"k8s:{body.namespace}/{body.release}", "OK")
         return result
     except Exception as e:
-        await log_activity(user["username"], "HELM_ROLLBACK", f"k8s:{body.namespace}/{body.release}", "FAIL", str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        await log_activity(user["username"], "HELM_ROLLBACK", f"k8s:{body.namespace}/{body.release}", "FAIL", audit_error(e))
+        raise operation_error(logger, "rollback Helm chart", e)

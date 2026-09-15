@@ -37,7 +37,7 @@ Nginx :80  ---- serves frontend/*.html and frontend/*.js
                          |
                          +--> SQLite activity and approval records
                          +--> Azure SDK / AWS SDK
-                         +--> Docker SDK via mounted Docker socket
+                         +--> Docker SDK (disabled by default; no host socket mounted)
                          +--> Kubernetes SDK and kubectl via kubeconfig
                          +--> Terraform CLI in isolated workspaces
                          +--> OpenAI or Azure OpenAI for the AI agent
@@ -208,7 +208,7 @@ POST /api/auth/login
 
 `backend/auth/jwt_handler.py` creates HS256 tokens. `backend/auth/dependencies.py` accepts the access token from either the `access_token` cookie or an `Authorization: Bearer ...` header. Protected routes use `Depends(get_current_user)` and role-restricted routes use `require_role(...)`.
 
-The configured defaults are a 15-minute access token and a 7-day refresh token. The local cookie configuration has `secure=False`; use HTTPS and secure cookies before exposing the application outside a trusted local environment.
+The configured defaults are a 15-minute access token and a 7-day refresh token. Local development uses `COOKIE_SECURE=false`; production must set `ENVIRONMENT=production`, `COOKIE_SECURE=true`, and run behind HTTPS. The backend fails startup if production security settings are missing.
 
 ### 4.3 Startup and persistence
 
@@ -225,7 +225,7 @@ The route modules validate request models and call service modules:
 
 - `routers/azure.py` -> `services/azure_client.py` -> Azure management SDK.
 - `routers/aws.py` -> `services/aws_client.py` -> boto3.
-- `routers/docker_ops.py` -> `services/docker_client.py` -> Docker SDK and the mounted Docker socket.
+- `routers/docker_ops.py` -> `services/docker_client.py` -> Docker SDK. Docker operations are disabled by default and the backend does not mount the host Docker socket.
 - `routers/kubernetes_ops.py` -> `services/k8s_client.py` -> Kubernetes Python client, kubectl, and Helm.
 - `routers/terraform.py` -> `services/terraform_runner.py` -> Terraform subprocesses.
 
@@ -425,10 +425,10 @@ This project is an operations portal, so a local convenience setting can become 
 - Replace every placeholder in `.env`; the fallback JWT secret in code is for development only.
 - Keep `.env`, Terraform variable files, state, kubeconfig, cloud keys, and database files out of Git.
 - Use a narrowly scoped Azure service principal or managed identity and a narrowly scoped AWS identity.
-- The backend container mounts `/var/run/docker.sock`; access to the Docker socket is effectively privileged on the Docker host.
+- The backend container does not mount `/var/run/docker.sock`; Docker operations remain disabled unless a separately isolated privileged worker is designed.
 - The backend can run Terraform, kubectl, Helm, Docker, AWS, and Azure operations. Restrict network access and authenticated roles accordingly.
 - Nginx rate-limits login and API requests and blocks several scanner user agents, but it is not a replacement for a production WAF, TLS termination, identity provider, or network segmentation.
-- `allow_origins=["*"]` and local `secure=False` cookies should be reviewed before any internet-facing deployment.
+- CORS is configured from `CORS_ALLOWED_ORIGINS`, and cross-origin state-changing requests are rejected unless explicitly allowed. Production requires secure cookies and HTTPS.
 - Enable HTTPS, secure cookies, a managed identity or secret manager, production WAF blocking mode, logging, backups, and alerting before production use.
 - Test backup and restore procedures rather than treating a successful backup configuration as proof of recoverability.
 

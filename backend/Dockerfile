@@ -14,8 +14,12 @@ RUN curl -fsSL https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_li
 RUN curl -fsSL "https://dl.k8s.io/release/v1.30.2/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl
 
-# Install Helm
-RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+# Install a pinned Helm release; avoid executing an unpinned remote script.
+ARG HELM_VERSION=3.15.4
+RUN curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tgz \
+    && tar -xzf /tmp/helm.tgz -C /tmp \
+    && install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm \
+    && rm -rf /tmp/helm.tgz /tmp/linux-amd64
 
 WORKDIR /app
 

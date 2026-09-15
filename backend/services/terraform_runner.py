@@ -10,7 +10,9 @@ WORKSPACES_ROOT = os.getenv("TERRAFORM_WORKSPACES", "/app/terraform-workspaces")
 def workspace_path(workspace: str) -> Path:
     base = Path(WORKSPACES_ROOT).resolve()
     target = (base / workspace).resolve()
-    if not str(target).startswith(str(base)):
+    try:
+        target.relative_to(base)
+    except ValueError:
         raise ValueError("Invalid workspace name")
     return target
 
