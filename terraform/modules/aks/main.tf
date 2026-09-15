@@ -1,3 +1,9 @@
+locals {
+  api_server_authorized_ip_ranges = compact([
+    for cidr in var.api_server_authorized_ip_ranges : trimspace(cidr)
+  ])
+}
+
 resource "azurerm_kubernetes_cluster" "main" {
   name                = var.name
   location            = var.location
@@ -55,11 +61,11 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 
   # Restrict API server access to known CIDRs (VPN, CI/CD, bastion)
-  # In prod, set var.api_server_authorized_ip_ranges to your actual ranges
+  # In prod, set var.api_server_authorized_ip_ranges to your actual ranges.
   dynamic "api_server_access_profile" {
-    for_each = length(var.api_server_authorized_ip_ranges) > 0 ? [1] : []
+    for_each = length(local.api_server_authorized_ip_ranges) > 0 ? [1] : []
     content {
-      authorized_ip_ranges = var.api_server_authorized_ip_ranges
+      authorized_ip_ranges = local.api_server_authorized_ip_ranges
     }
   }
 

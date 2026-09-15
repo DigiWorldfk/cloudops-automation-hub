@@ -64,6 +64,19 @@ variable "aks_vm_size" {
   default     = "Standard_D4s_v3"
 }
 
+variable "api_server_authorized_ip_ranges" {
+  description = "CIDR ranges allowed to reach the AKS API server in production. Replace the sample values with your approved VPN, bastion, and CI/CD egress ranges before apply."
+  type        = list(string)
+  default     = ["198.51.100.10/32", "198.51.100.11/32"]
+
+  validation {
+    condition = compact([
+      for cidr in var.api_server_authorized_ip_ranges : trimspace(cidr)
+    ]) != ["198.51.100.10/32", "198.51.100.11/32"]
+    error_message = "Replace the sample api_server_authorized_ip_ranges values with your real VPN, bastion, and CI/CD egress CIDRs before applying production."
+  }
+}
+
 # ─── Secrets (never commit real values — use gitignored terraform.tfvars) ─────
 
 variable "tls_cert_keyvault_secret_id" {

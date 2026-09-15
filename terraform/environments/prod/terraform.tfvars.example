@@ -19,6 +19,11 @@ aks_min_node_count = 3
 aks_max_node_count = 10
 aks_vm_size        = "Standard_D4s_v3"
 
+# Required in production: replace the documentation-only placeholder with the approved VPN,
+# bastion, and CI/CD egress CIDRs that should be allowed to reach the AKS API server.
+# Uncomment and replace with your real allowlist before running a production plan/apply.
+# api_server_authorized_ip_ranges = ["198.51.100.10/32", "198.51.100.11/32"]
+
 # ─── Secrets ──────────────────────────────────────────────────────────────────
 tls_cert_keyvault_secret_id = "https://kv-aks-enterprise-prod.vault.azure.net/secrets/app-tls/CHANGE_ME"
 
@@ -70,4 +75,3 @@ spf_record   = null
 
 dmarc_record = null
 # dmarc_record = "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"
-
