@@ -30,9 +30,18 @@ variable "node_instance_types" {
   type    = list(string)
   default = ["m5.xlarge"]
 }
-variable "node_desired_size" { type = number; default = 3 }
-variable "node_min_size" { type = number; default = 3 }
-variable "node_max_size" { type = number; default = 10 }
+variable "node_desired_size" {
+  type    = number
+  default = 3
+}
+variable "node_min_size" {
+  type    = number
+  default = 3
+}
+variable "node_max_size" {
+  type    = number
+  default = 10
+}
 
 variable "domain_name" {
   description = "Primary domain (e.g. example.com) — set in tfvars"
@@ -80,18 +89,42 @@ variable "ssm_secrets" {
 }
 
 # ── VPC Peering ───────────────────────────────────────────────────────────────
-variable "enable_vpc_peering" { type = bool; default = false }
-variable "peer_vpc_id" { type = string; default = null }
-variable "peer_vpc_cidr" { type = string; default = null }
+variable "enable_vpc_peering" {
+  type    = bool
+  default = false
+}
+variable "peer_vpc_id" {
+  type    = string
+  default = null
+}
+variable "peer_vpc_cidr" {
+  type    = string
+  default = null
+}
 
 # ── Transit Gateway ───────────────────────────────────────────────────────────
-variable "enable_transit_gateway" { type = bool; default = false }
-variable "tgw_destination_cidrs" { type = list(string); default = [] }
+variable "enable_transit_gateway" {
+  type    = bool
+  default = false
+}
+variable "tgw_destination_cidrs" {
+  type    = list(string)
+  default = []
+}
 
 # ── VPN ───────────────────────────────────────────────────────────────────────
-variable "enable_vpn" { type = bool; default = false }
-variable "customer_gateway_ip" { type = string; default = null }
-variable "vpn_destination_cidrs" { type = list(string); default = [] }
+variable "enable_vpn" {
+  type    = bool
+  default = false
+}
+variable "customer_gateway_ip" {
+  type    = string
+  default = null
+}
+variable "vpn_destination_cidrs" {
+  type    = list(string)
+  default = []
+}
 
 # ── Internal NLB ─────────────────────────────────────────────────────────────
 variable "db_target_ips" {

@@ -55,8 +55,8 @@ resource "aws_ecr_repository_policy" "main" {
     Version = "2012-10-17"
     Statement = concat(
       [{
-        Sid    = "NodePullAccess"
-        Effect = "Allow"
+        Sid       = "NodePullAccess"
+        Effect    = "Allow"
         Principal = { AWS = var.node_role_arn }
         Action = [
           "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage",
@@ -64,8 +64,8 @@ resource "aws_ecr_repository_policy" "main" {
         ]
       }],
       var.ci_role_arn != null ? [{
-        Sid    = "CIPushPullAccess"
-        Effect = "Allow"
+        Sid       = "CIPushPullAccess"
+        Effect    = "Allow"
         Principal = { AWS = var.ci_role_arn }
         Action = [
           "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage",

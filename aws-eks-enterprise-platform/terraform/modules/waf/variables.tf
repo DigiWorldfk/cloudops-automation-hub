@@ -27,7 +27,7 @@ variable "waf_mode" {
 variable "rate_limit" {
   description = "Max requests per 5-minute window per IP before rate-limit rule triggers"
   type        = number
-  default     = 2000  # 300 was too low — legitimate mobile clients on 3G/4G hit it; 2000 = ~6.7 req/s per real IP
+  default     = 2000 # 300 was too low — legitimate mobile clients on 3G/4G hit it; 2000 = ~6.7 req/s per real IP
 }
 variable "blocked_countries" {
   description = "ISO 3166 country codes to geo-block"

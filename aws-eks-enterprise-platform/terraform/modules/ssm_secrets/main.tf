@@ -7,16 +7,18 @@ data "aws_region" "current" {}
 
 # ── SSM Parameters ────────────────────────────────────────────────────────────
 resource "aws_ssm_parameter" "main" {
-  for_each = var.secrets
+  # for_each keys must not be sensitive; var.secrets is, so use its (non-sensitive) key set
+  # and look values up by key inside the resource body instead.
+  for_each = toset(nonsensitive(keys(var.secrets)))
 
-  name        = "/${var.name_prefix}/${var.environment}/${each.key}"
+  name        = "/${var.name_prefix}/${var.environment}/${each.value}"
   type        = "SecureString"
-  value       = each.value.value
-  description = each.value.description
+  value       = var.secrets[each.value].value
+  description = var.secrets[each.value].description
   key_id      = var.kms_key_arn
-  tier        = length(each.value.value) > 4096 ? "Advanced" : "Standard"
+  tier        = length(var.secrets[each.value].value) > 4096 ? "Advanced" : "Standard"
 
-  tags = merge(var.tags, { SecretName = each.key })
+  tags = merge(var.tags, { SecretName = each.value })
 
   lifecycle {
     ignore_changes = [value] # Managed externally after initial creation
@@ -100,7 +102,7 @@ resource "aws_iam_role" "eso" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
+      Effect    = "Allow"
       Principal = { Federated = var.oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {

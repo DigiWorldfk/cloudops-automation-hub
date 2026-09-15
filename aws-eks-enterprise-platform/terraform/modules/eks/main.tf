@@ -121,20 +121,6 @@ resource "aws_eks_cluster" "main" {
   tags = merge(var.tags, { Name = var.name_prefix })
 }
 
-# ── OIDC Provider (IRSA) ──────────────────────────────────────────────────────
-data "tls_certificate" "eks" {
-  count = var.enable_irsa ? 1 : 0
-  url   = aws_eks_cluster.main.identity[0].oidc[0].issuer
-}
-
-resource "aws_iam_openid_connect_provider" "eks" {
-  count           = var.enable_irsa ? 1 : 0
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.eks[0].certificates[0].sha1_fingerprint]
-  url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
-  tags            = var.tags
-}
-
 # ── IAM — Node Role ───────────────────────────────────────────────────────────
 resource "aws_iam_role" "node" {
   name = "${var.name_prefix}-eks-node-role"
@@ -220,14 +206,14 @@ resource "aws_eks_node_group" "main" {
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name                = aws_eks_cluster.main.name
   addon_name                  = "vpc-cni"
-  resolve_conflicts_on_update = "PRESERVE"  # was OVERWRITE — prevents silent destruction of custom VPC-CNI config
+  resolve_conflicts_on_update = "PRESERVE" # was OVERWRITE — prevents silent destruction of custom VPC-CNI config
   tags                        = var.tags
 }
 
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.main.name
   addon_name                  = "coredns"
-  resolve_conflicts_on_update = "PRESERVE"  # was OVERWRITE — preserves custom CoreDNS ConfigMap overrides
+  resolve_conflicts_on_update = "PRESERVE" # was OVERWRITE — preserves custom CoreDNS ConfigMap overrides
   depends_on                  = [aws_eks_node_group.main]
   tags                        = var.tags
 }

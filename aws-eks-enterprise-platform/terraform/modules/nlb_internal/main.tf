@@ -149,12 +149,15 @@ resource "aws_security_group" "db_nodes" {
 ###############################################################################
 
 resource "aws_lb_target_group" "db" {
-  name                   = "${var.name_prefix}-nlb-db-tg"
-  port                   = local.effective_port
-  protocol               = "TCP"
-  vpc_id                 = var.vpc_id
-  target_type            = "ip"                # register DB IPs directly
+  name                          = "${var.name_prefix}-nlb-db-tg"
+  port                          = local.effective_port
+  protocol                      = "TCP"
+  vpc_id                        = var.vpc_id
+  target_type                   = "ip"          # register DB IPs directly
   load_balancing_algorithm_type = "round_robin" # explicit even though default for NLB
+
+  # Preserve client IP so DB can log real source addresses for audit
+  preserve_client_ip = "true"
 
   # Drain connections gracefully before deregistering
   deregistration_delay = var.deregistration_delay
@@ -165,7 +168,7 @@ resource "aws_lb_target_group" "db" {
   health_check {
     enabled             = var.health_check_enabled
     protocol            = "TCP"
-    port                = "traffic-port"          # same as db_port
+    port                = "traffic-port" # same as db_port
     interval            = var.health_check_interval
     healthy_threshold   = var.health_check_healthy_threshold
     unhealthy_threshold = var.health_check_unhealthy_threshold
@@ -173,7 +176,7 @@ resource "aws_lb_target_group" "db" {
   }
 
   stickiness {
-    enabled = false    # Round-Robin — no sticky sessions for DB tier
+    enabled = false # Round-Robin — no sticky sessions for DB tier
     type    = "source_ip"
   }
 
@@ -203,16 +206,13 @@ resource "aws_lb_target_group_attachment" "db" {
 
 resource "aws_lb" "internal_db" {
   name               = "${var.name_prefix}-nlb-db"
-  internal           = true                   # never publicly reachable
+  internal           = true # never publicly reachable
   load_balancer_type = "network"
   subnets            = var.private_subnet_ids
   security_groups    = [aws_security_group.nlb.id]
 
   enable_cross_zone_load_balancing = var.enable_cross_zone_load_balancing
   enable_deletion_protection       = var.deletion_protection
-
-  # Preserve client IP so DB can log real source addresses for audit
-  enable_preserve_client_ip = true
 
   dynamic "access_logs" {
     for_each = var.access_logs_bucket != null ? [1] : []

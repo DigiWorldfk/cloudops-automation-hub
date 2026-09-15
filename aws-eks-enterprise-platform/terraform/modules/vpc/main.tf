@@ -31,9 +31,9 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = merge(var.tags, {
-    Name                                          = "${var.name_prefix}-public-${var.availability_zones[count.index]}"
-    "kubernetes.io/role/elb"                      = "1"
-    "kubernetes.io/cluster/${var.name_prefix}"    = "shared"
+    Name                                       = "${var.name_prefix}-public-${var.availability_zones[count.index]}"
+    "kubernetes.io/role/elb"                   = "1"
+    "kubernetes.io/cluster/${var.name_prefix}" = "shared"
   })
 }
 
@@ -45,9 +45,9 @@ resource "aws_subnet" "private" {
   availability_zone = var.availability_zones[count.index]
 
   tags = merge(var.tags, {
-    Name                                          = "${var.name_prefix}-private-${var.availability_zones[count.index]}"
-    "kubernetes.io/role/internal-elb"             = "1"
-    "kubernetes.io/cluster/${var.name_prefix}"    = "shared"
+    Name                                       = "${var.name_prefix}-private-${var.availability_zones[count.index]}"
+    "kubernetes.io/role/internal-elb"          = "1"
+    "kubernetes.io/cluster/${var.name_prefix}" = "shared"
   })
 }
 
@@ -203,20 +203,36 @@ resource "aws_network_acl" "public" {
   tags       = merge(var.tags, { Name = "${var.name_prefix}-nacl-public" })
 
   ingress {
-    rule_no    = 100; protocol = "tcp"; action = "allow"
-    cidr_block = "0.0.0.0/0"; from_port = 80; to_port = 80
+    rule_no    = 100
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 80
+    to_port    = 80
   }
   ingress {
-    rule_no    = 110; protocol = "tcp"; action = "allow"
-    cidr_block = "0.0.0.0/0"; from_port = 443; to_port = 443
+    rule_no    = 110
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 443
+    to_port    = 443
   }
   ingress {
-    rule_no    = 120; protocol = "tcp"; action = "allow"  # ephemeral return traffic
-    cidr_block = "0.0.0.0/0"; from_port = 1024; to_port = 65535
+    rule_no    = 120 # ephemeral return traffic
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 1024
+    to_port    = 65535
   }
   egress {
-    rule_no    = 100; protocol = "-1"; action = "allow"
-    cidr_block = "0.0.0.0/0"; from_port = 0; to_port = 0
+    rule_no    = 100
+    protocol   = "-1"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
   }
 }
 
@@ -227,16 +243,28 @@ resource "aws_network_acl" "private" {
   tags       = merge(var.tags, { Name = "${var.name_prefix}-nacl-private" })
 
   ingress {
-    rule_no    = 100; protocol = "-1"; action = "allow"
-    cidr_block = var.vpc_cidr; from_port = 0; to_port = 0
+    rule_no    = 100
+    protocol   = "-1"
+    action     = "allow"
+    cidr_block = var.vpc_cidr
+    from_port  = 0
+    to_port    = 0
   }
   ingress {
-    rule_no    = 200; protocol = "tcp"; action = "allow"  # ephemeral return from internet (via NAT)
-    cidr_block = "0.0.0.0/0"; from_port = 1024; to_port = 65535
+    rule_no    = 200 # ephemeral return from internet (via NAT)
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 1024
+    to_port    = 65535
   }
   egress {
-    rule_no    = 100; protocol = "-1"; action = "allow"
-    cidr_block = "0.0.0.0/0"; from_port = 0; to_port = 0
+    rule_no    = 100
+    protocol   = "-1"
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    from_port  = 0
+    to_port    = 0
   }
 }
 
@@ -247,27 +275,39 @@ resource "aws_network_acl" "isolated" {
   tags       = merge(var.tags, { Name = "${var.name_prefix}-nacl-isolated" })
 
   ingress {
-    rule_no    = 100; protocol = "tcp"; action = "allow"
-    cidr_block = var.vpc_cidr; from_port = 5432; to_port = 5432
+    rule_no    = 100
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = var.vpc_cidr
+    from_port  = 5432
+    to_port    = 5432
   }
   ingress {
-    rule_no    = 110; protocol = "tcp"; action = "allow"  # MySQL
-    cidr_block = var.vpc_cidr; from_port = 3306; to_port = 3306
+    rule_no    = 110 # MySQL
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = var.vpc_cidr
+    from_port  = 3306
+    to_port    = 3306
   }
   egress {
-    rule_no    = 100; protocol = "tcp"; action = "allow"  # ephemeral return
-    cidr_block = var.vpc_cidr; from_port = 1024; to_port = 65535
+    rule_no    = 100 # ephemeral return
+    protocol   = "tcp"
+    action     = "allow"
+    cidr_block = var.vpc_cidr
+    from_port  = 1024
+    to_port    = 65535
   }
 }
 
 # ── VPC Peering ───────────────────────────────────────────────────────────────
 resource "aws_vpc_peering_connection" "main" {
-  count       = var.enable_vpc_peering ? 1 : 0
-  vpc_id      = aws_vpc.main.id
-  peer_vpc_id = var.peer_vpc_id
+  count         = var.enable_vpc_peering ? 1 : 0
+  vpc_id        = aws_vpc.main.id
+  peer_vpc_id   = var.peer_vpc_id
   peer_owner_id = var.peer_owner_id
-  peer_region = var.peer_region
-  auto_accept = false  # always require explicit manual acceptance for security review
+  peer_region   = var.peer_region
+  auto_accept   = false # always require explicit manual acceptance for security review
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-vpc-peering" })
 }
@@ -285,7 +325,7 @@ resource "aws_ec2_transit_gateway" "main" {
   description                     = "${var.name_prefix} Transit Gateway — hub-and-spoke"
   default_route_table_association = "enable"
   default_route_table_propagation = "enable"
-  auto_accept_shared_attachments  = "disable"  # require explicit RAM resource share acceptance
+  auto_accept_shared_attachments  = "disable" # require explicit RAM resource share acceptance
   dns_support                     = "enable"
   vpn_ecmp_support                = "enable"
 

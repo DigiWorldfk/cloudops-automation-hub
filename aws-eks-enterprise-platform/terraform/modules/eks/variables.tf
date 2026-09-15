@@ -26,10 +26,22 @@ variable "node_capacity_type" {
   type        = string
   default     = "ON_DEMAND"
 }
-variable "node_desired_size" { type = number; default = 2 }
-variable "node_min_size" { type = number; default = 1 }
-variable "node_max_size" { type = number; default = 10 }
-variable "node_disk_size" { type = number; default = 50 }
+variable "node_desired_size" {
+  type    = number
+  default = 2
+}
+variable "node_min_size" {
+  type    = number
+  default = 1
+}
+variable "node_max_size" {
+  type    = number
+  default = 10
+}
+variable "node_disk_size" {
+  type    = number
+  default = 50
+}
 
 variable "endpoint_private_access" {
   type    = bool
@@ -42,14 +54,9 @@ variable "endpoint_public_access" {
 variable "public_access_cidrs" {
   description = "CIDRs allowed to reach the public API endpoint. Empty list = no public access (recommended for prod). Only set when endpoint_public_access = true."
   type        = list(string)
-  default     = []  # was 0.0.0.0/0 — changed to deny-by-default; must be explicitly set per environment
+  default     = [] # was 0.0.0.0/0 — changed to deny-by-default; must be explicitly set per environment
 }
 
-variable "enable_irsa" {
-  description = "Enable IAM Roles for Service Accounts (OIDC provider)"
-  type        = bool
-  default     = true
-}
 variable "enable_cluster_autoscaler" {
   type    = bool
   default = true
