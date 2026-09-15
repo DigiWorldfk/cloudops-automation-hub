@@ -6,10 +6,6 @@ locals {
   configured_api_server_authorized_ip_ranges = compact(
     local.normalized_api_server_authorized_ip_ranges
   )
-  uses_scan_only_api_server_authorized_ip_range = contains(
-    local.configured_api_server_authorized_ip_ranges,
-    local.scan_only_api_server_authorized_ip_ranges[0]
-  )
   api_server_authorized_ip_ranges = var.environment == "prod" ? coalescelist(
     local.configured_api_server_authorized_ip_ranges,
     local.scan_only_api_server_authorized_ip_ranges
@@ -86,8 +82,7 @@ resource "azurerm_kubernetes_cluster" "main" {
     precondition {
       condition = var.environment != "prod" || (
         length(local.configured_api_server_authorized_ip_ranges) > 0 &&
-        local.configured_api_server_authorized_ip_ranges != local.scan_only_api_server_authorized_ip_ranges &&
-        !local.uses_scan_only_api_server_authorized_ip_range
+        local.configured_api_server_authorized_ip_ranges != local.scan_only_api_server_authorized_ip_ranges
       )
       error_message = "Production AKS clusters must replace the scan-only placeholder with approved VPN, bastion, or CI/CD CIDRs."
     }
