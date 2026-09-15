@@ -5,7 +5,7 @@
 terraform {
   required_version = ">= 1.5"
   required_providers {
-    aws = { source = "hashicorp/aws"; version = "~> 5.50" }
+    aws = { source = "hashicorp/aws", version = "~> 5.50" }
   }
 }
 
@@ -13,8 +13,14 @@ provider "aws" {
   region = var.aws_region
 }
 
-variable "aws_region" { type = string; default = "eu-west-1" }
-variable "project" { type = string; default = "eks-enterprise" }
+variable "aws_region" {
+  type    = string
+  default = "eu-west-1"
+}
+variable "project" {
+  type    = string
+  default = "eks-enterprise"
+}
 variable "environments" {
   type    = list(string)
   default = ["dev", "staging", "prod"]

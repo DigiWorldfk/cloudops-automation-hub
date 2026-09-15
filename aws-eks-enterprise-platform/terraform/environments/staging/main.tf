@@ -5,8 +5,8 @@
 terraform {
   required_version = ">= 1.5"
   required_providers {
-    aws = { source = "hashicorp/aws"; version = "~> 5.50" }
-    tls = { source = "hashicorp/tls"; version = "~> 4.0" }
+    aws = { source = "hashicorp/aws", version = "~> 5.50" }
+    tls = { source = "hashicorp/tls", version = "~> 4.0" }
   }
   backend "s3" {}
 }
@@ -35,11 +35,18 @@ locals {
   }
 }
 
+module "kms" {
+  source      = "../../modules/kms"
+  name_prefix = local.name_prefix
+  environment = local.env
+  tags        = local.tags
+}
+
 module "s3" {
   source             = "../../modules/s3"
   name_prefix        = local.name_prefix
   environment        = local.env
-  kms_key_arn        = module.security.kms_key_arns["s3"]
+  kms_key_arn        = module.kms.kms_key_arns["s3"]
   force_destroy      = false
   log_retention_days = 90
   tags               = local.tags
@@ -49,11 +56,10 @@ module "security" {
   source               = "../../modules/security"
   name_prefix          = local.name_prefix
   environment          = local.env
+  kms_key_arns         = module.kms.kms_key_arns
   cloudtrail_s3_bucket = module.s3.logs_bucket_id
-  oidc_provider_arn    = module.eks.oidc_provider_arn
-  oidc_provider_url    = module.eks.oidc_provider_url
   tags                 = local.tags
-  depends_on           = [module.s3, module.eks]
+  depends_on           = [module.s3]
 }
 
 module "vpc" {
@@ -85,23 +91,80 @@ module "eks" {
   endpoint_private_access = true
   endpoint_public_access  = true
   public_access_cidrs     = var.allowed_cidr_blocks
-  enable_irsa             = true
   log_retention_days      = 30
   tags                    = local.tags
 }
 
+# ── IRSA / OIDC — IAM roles for Kubernetes service accounts ───────────────────
+module "irsa_oidc" {
+  source           = "../../modules/irsa_oidc"
+  name_prefix      = local.name_prefix
+  oidc_issuer_url  = module.eks.oidc_issuer_url
+  oidc_issuer_host = trimprefix(module.eks.oidc_issuer_url, "https://")
+
+  service_accounts = {
+    backend = {
+      namespace       = "backend"
+      service_account = "backend-sa"
+      policy_json = jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+          Effect   = "Allow"
+          Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+          Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${local.name_prefix}/*"
+        }]
+      })
+    }
+  }
+
+  tags = local.tags
+}
+
 module "domain" {
-  source                    = "../../modules/domain"
-  providers                 = { aws.us_east_1 = aws.us_east_1 }
-  name_prefix               = local.name_prefix
-  environment               = local.env
-  domain_name               = var.domain_name
-  cloudfront_domain_name    = module.cdn.domain_name
-  cloudfront_hosted_zone_id = module.cdn.hosted_zone_id
-  alb_dns_name              = module.alb.alb_external_dns_name
-  alb_hosted_zone_id        = module.alb.alb_external_zone_id
-  tags                      = local.tags
-  depends_on                = [module.cdn, module.alb]
+  source      = "../../modules/domain"
+  providers   = { aws.us_east_1 = aws.us_east_1 }
+  name_prefix = local.name_prefix
+  environment = local.env
+  domain_name = var.domain_name
+  tags        = local.tags
+}
+
+# Apex/www/api ALIAS records live here (not in the domain module) so that
+# domain stays a leaf — it must not depend on cdn/alb, which both depend on it.
+resource "aws_route53_record" "apex" {
+  zone_id = module.domain.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = module.cdn.domain_name
+    zone_id                = module.cdn.hosted_zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "www" {
+  zone_id = module.domain.hosted_zone_id
+  name    = "www.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = module.cdn.domain_name
+    zone_id                = module.cdn.hosted_zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "api" {
+  zone_id = module.domain.hosted_zone_id
+  name    = "api.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = module.cdn.domain_name
+    zone_id                = module.cdn.hosted_zone_id
+    evaluate_target_health = true
+  }
 }
 
 module "alb" {
@@ -159,7 +222,7 @@ module "ecr" {
   repositories         = ["frontend", "backend"]
   image_tag_mutability = "IMMUTABLE"
   scan_on_push         = true
-  kms_key_arn          = module.security.kms_key_arns["eks"]
+  kms_key_arn          = module.kms.kms_key_arns["eks"]
   node_role_arn        = module.eks.node_role_arn
   ci_role_arn          = module.cicd.github_actions_role_arn
   tags                 = local.tags
@@ -190,7 +253,7 @@ module "database" {
   master_password           = var.db_master_password
   backup_retention_days     = 14
   deletion_protection       = false
-  kms_key_arn               = module.security.kms_key_arns["rds"]
+  kms_key_arn               = module.kms.kms_key_arns["rds"]
   tags                      = local.tags
 }
 
@@ -198,29 +261,29 @@ module "ssm_secrets" {
   source              = "../../modules/ssm_secrets"
   name_prefix         = local.name_prefix
   environment         = local.env
-  kms_key_arn         = module.security.kms_key_arns["ssm"]
-  oidc_provider_arn   = module.eks.oidc_provider_arn
-  oidc_provider_url   = module.eks.oidc_provider_url
-  workload_role_arns  = values(module.security.irsa_role_arns)
+  kms_key_arn         = module.kms.kms_key_arns["ssm"]
+  oidc_provider_arn   = module.irsa_oidc.oidc_provider_arn
+  oidc_provider_url   = module.irsa_oidc.oidc_provider_url
+  workload_role_arns  = values(module.irsa_oidc.role_arns)
   enable_write_policy = true
   secrets             = var.ssm_secrets
   tags                = local.tags
 }
 
 module "blue_green" {
-  source                     = "../../modules/blue_green"
-  name_prefix                = local.name_prefix
-  environment                = local.env
-  blue_target_group_name     = "${local.name_prefix}-tg-blue"
-  green_target_group_name    = "${local.name_prefix}-tg-green"
-  alb_listener_arns          = [module.alb.https_listener_arn]
-  traffic_routing_type       = "TimeBasedLinear"
-  traffic_routing_interval   = 5
-  traffic_routing_percentage = 50
+  source                       = "../../modules/blue_green"
+  name_prefix                  = local.name_prefix
+  environment                  = local.env
+  blue_target_group_name       = "${local.name_prefix}-tg-blue"
+  green_target_group_name      = "${local.name_prefix}-tg-green"
+  alb_listener_arns            = [module.alb.https_listener_arn]
+  traffic_routing_type         = "TimeBasedLinear"
+  traffic_routing_interval     = 5
+  traffic_routing_percentage   = 50
   terminate_blue_after_minutes = 5
-  sns_notification_email     = var.notification_email
-  tags                       = local.tags
-  depends_on                 = [module.alb]
+  sns_notification_email       = var.notification_email
+  tags                         = local.tags
+  depends_on                   = [module.alb]
 }
 
 ###############################################################################
@@ -240,7 +303,7 @@ module "nlb_internal" {
   db_engine     = var.db_engine
   db_target_ips = var.db_target_ips
 
-  deletion_protection              = false   # staging — allow teardown
+  deletion_protection              = false # staging — allow teardown
   enable_cross_zone_load_balancing = true
   health_check_interval            = 10
   health_check_healthy_threshold   = 2

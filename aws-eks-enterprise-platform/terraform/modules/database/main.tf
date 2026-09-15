@@ -45,7 +45,7 @@ resource "aws_rds_cluster_parameter_group" "main" {
   # Full audit trail — log all statements, connections, and disconnections
   parameter {
     name  = "log_statement"
-    value = "all"  # was 'ddl' — changed to 'all' for complete audit trail
+    value = "all" # was 'ddl' — changed to 'all' for complete audit trail
   }
   parameter {
     name  = "log_min_duration_statement"
@@ -94,10 +94,10 @@ resource "aws_rds_cluster" "main" {
   # instead of long-lived master_password credentials
   iam_database_authentication_enabled = true
 
-  deletion_protection             = var.deletion_protection
-  skip_final_snapshot             = var.environment != "prod"
-  final_snapshot_identifier       = var.environment == "prod" ? "${var.name_prefix}-final-snapshot" : null
-  copy_tags_to_snapshot           = true
+  deletion_protection       = var.deletion_protection
+  skip_final_snapshot       = var.environment != "prod"
+  final_snapshot_identifier = var.environment == "prod" ? "${var.name_prefix}-final-snapshot" : null
+  copy_tags_to_snapshot     = true
 
   enabled_cloudwatch_logs_exports = ["postgresql"]
 
@@ -108,11 +108,11 @@ resource "aws_rds_cluster" "main" {
 resource "aws_rds_cluster_instance" "main" {
   count = var.instance_count
 
-  identifier           = "${var.name_prefix}-aurora-${count.index}"
-  cluster_identifier   = aws_rds_cluster.main.id
-  instance_class       = var.instance_class
-  engine               = aws_rds_cluster.main.engine
-  engine_version       = aws_rds_cluster.main.engine_version
+  identifier              = "${var.name_prefix}-aurora-${count.index}"
+  cluster_identifier      = aws_rds_cluster.main.id
+  instance_class          = var.instance_class
+  engine                  = aws_rds_cluster.main.engine
+  engine_version          = aws_rds_cluster.main.engine_version
   db_parameter_group_name = aws_db_parameter_group.main.name
 
   performance_insights_enabled    = var.enable_performance_insights

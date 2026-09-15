@@ -22,17 +22,17 @@ resource "aws_cloudfront_distribution" "main" {
     origin_id   = "${var.name_prefix}-alb-origin"
 
     custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-      origin_read_timeout    = 30
+      http_port                = 80
+      https_port               = 443
+      origin_protocol_policy   = "https-only"
+      origin_ssl_protocols     = ["TLSv1.2"]
+      origin_read_timeout      = 30
       origin_keepalive_timeout = 5
     }
 
     custom_header {
       name  = "X-CloudFront-Secret"
-      value = var.origin_secret
+      value = coalesce(var.origin_secret, "unset")
     }
   }
 

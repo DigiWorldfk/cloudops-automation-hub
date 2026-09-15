@@ -53,14 +53,21 @@ locals {
 # S3 Buckets (remote state is in bootstrap; these are app/logs/velero)
 ###############################################################################
 
-module "s3" {
-  source      = "../../modules/s3"
+module "kms" {
+  source      = "../../modules/kms"
   name_prefix = local.name_prefix
   environment = local.env
-  kms_key_arn = module.security.kms_key_arns["s3"]
-  force_destroy = false
-  log_retention_days = 365
   tags        = local.tags
+}
+
+module "s3" {
+  source             = "../../modules/s3"
+  name_prefix        = local.name_prefix
+  environment        = local.env
+  kms_key_arn        = module.kms.kms_key_arns["s3"]
+  force_destroy      = false
+  log_retention_days = 365
+  tags               = local.tags
 }
 
 ###############################################################################
@@ -71,27 +78,12 @@ module "security" {
   source               = "../../modules/security"
   name_prefix          = local.name_prefix
   environment          = local.env
-  cloudtrail_s3_bucket = module.s3.logs_bucket_id
-  oidc_provider_arn    = module.eks.oidc_provider_arn
-  oidc_provider_url    = module.eks.oidc_provider_url
-  security_alert_email = var.security_alert_email  # GuardDuty high-severity SNS alerts
-  irsa_service_accounts = {
-    backend = {
-      namespace       = "backend"
-      service_account = "backend-sa"
-      policy_json = jsonencode({
-        Version = "2012-10-17"
-        Statement = [{
-          Effect   = "Allow"
-          Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
-          Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${local.name_prefix}/*"
-        }]
-      })
-    }
-  }
-  tags = local.tags
+  kms_key_arns         = module.kms.kms_key_arns
+  cloudtrail_s3_bucket = "${local.name_prefix}-logs" # matches module.s3's deterministic bucket name; avoids an s3<->security cycle
+  security_alert_email = var.security_alert_email    # GuardDuty high-severity SNS alerts
+  tags                 = local.tags
 
-  depends_on = [module.s3, module.eks]
+  depends_on = [module.s3]
 }
 
 ###############################################################################
@@ -133,8 +125,8 @@ module "eks" {
 
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
-  vpc_cidr           = var.vpc_cidr          # scopes cluster SG egress to VPC-internal traffic
-  kms_key_arn        = module.security.kms_key_arns["eks"]  # encrypts k8s Secrets at rest
+  vpc_cidr           = var.vpc_cidr                   # scopes cluster SG egress to VPC-internal traffic
+  kms_key_arn        = module.kms.kms_key_arns["eks"] # encrypts k8s Secrets at rest
 
   kubernetes_version      = var.kubernetes_version
   node_instance_types     = var.node_instance_types
@@ -145,8 +137,36 @@ module "eks" {
   node_disk_size          = 100
   endpoint_private_access = true
   endpoint_public_access  = false # private-only in prod
-  enable_irsa             = true
   log_retention_days      = 90
+
+  tags = local.tags
+}
+
+###############################################################################
+# IRSA / OIDC — IAM roles for Kubernetes service accounts
+###############################################################################
+
+module "irsa_oidc" {
+  source      = "../../modules/irsa_oidc"
+  name_prefix = local.name_prefix
+
+  oidc_issuer_url  = module.eks.oidc_issuer_url
+  oidc_issuer_host = trimprefix(module.eks.oidc_issuer_url, "https://")
+
+  service_accounts = {
+    backend = {
+      namespace       = "backend"
+      service_account = "backend-sa"
+      policy_json = jsonencode({
+        Version = "2012-10-17"
+        Statement = [{
+          Effect   = "Allow"
+          Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+          Resource = "arn:aws:ssm:${var.aws_region}:*:parameter/${local.name_prefix}/*"
+        }]
+      })
+    }
+  }
 
   tags = local.tags
 }
@@ -162,15 +182,47 @@ module "domain" {
   name_prefix               = local.name_prefix
   environment               = local.env
   domain_name               = var.domain_name
-  cloudfront_domain_name    = module.cdn.domain_name
-  cloudfront_hosted_zone_id = module.cdn.hosted_zone_id
-  alb_dns_name              = module.alb.alb_external_dns_name
-  alb_hosted_zone_id        = module.alb.alb_external_zone_id
   mx_records                = var.mx_records
   subject_alternative_names = ["*.${var.domain_name}"]
   tags                      = local.tags
+}
 
-  depends_on = [module.cdn, module.alb]
+# Apex/www/api ALIAS records live here (not in the domain module) so that
+# domain stays a leaf — it must not depend on cdn/alb, which both depend on it.
+resource "aws_route53_record" "apex" {
+  zone_id = module.domain.hosted_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = module.cdn.domain_name
+    zone_id                = module.cdn.hosted_zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "www" {
+  zone_id = module.domain.hosted_zone_id
+  name    = "www.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = module.cdn.domain_name
+    zone_id                = module.cdn.hosted_zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "api" {
+  zone_id = module.domain.hosted_zone_id
+  name    = "api.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = module.cdn.domain_name
+    zone_id                = module.cdn.hosted_zone_id
+    evaluate_target_health = true
+  }
 }
 
 ###############################################################################
@@ -188,7 +240,7 @@ module "alb" {
   certificate_arn          = module.domain.regional_certificate_arn
   deletion_protection      = true
   access_logs_bucket       = module.s3.logs_bucket_id
-  cloudfront_origin_secret = var.cloudfront_origin_secret  # enforced via ALB listener rule
+  cloudfront_origin_secret = var.cloudfront_origin_secret # enforced via ALB listener rule
 
   tags = local.tags
 }
@@ -205,9 +257,9 @@ module "waf_regional" {
   scope              = "REGIONAL"
   alb_arn            = module.alb.alb_external_arn
   waf_mode           = "BLOCK"
-  rate_limit         = 2000  # per real client IP via X-Forwarded-For (FORWARDED_IP aggregation)
+  rate_limit         = 2000 # per real client IP via X-Forwarded-For (FORWARDED_IP aggregation)
   blocked_countries  = var.blocked_countries
-  enable_bot_control = true  # Bot Control: L7 DDoS + credential-stuffing detection
+  enable_bot_control = true # Bot Control: L7 DDoS + credential-stuffing detection
   s3_logs_bucket_arn = module.s3.bucket_arns["logs"]
 
   tags = local.tags
@@ -229,7 +281,7 @@ module "cdn" {
   price_class     = "PriceClass_100"
   waf_web_acl_arn = module.waf_cloudfront.web_acl_arn
   s3_logs_bucket  = module.s3.logs_bucket_domain_name
-  origin_secret   = var.cloudfront_origin_secret  # injected as X-CloudFront-Secret on origin requests
+  origin_secret   = var.cloudfront_origin_secret # injected as X-CloudFront-Secret on origin requests
 
   tags = local.tags
 }
@@ -242,13 +294,13 @@ module "waf_cloudfront" {
   source    = "../../modules/waf"
   providers = { aws = aws.us_east_1 }
 
-  name_prefix        = "${local.name_prefix}-cf"
-  environment        = local.env
+  name_prefix = "${local.name_prefix}-cf"
+  environment = local.env
 
   scope              = "CLOUDFRONT"
   waf_mode           = "BLOCK"
-  rate_limit         = 2000  # per real client IP via FORWARDED_IP aggregation
-  enable_bot_control = true  # Bot Control: L7 DDoS + credential-stuffing detection
+  rate_limit         = 2000 # per real client IP via FORWARDED_IP aggregation
+  enable_bot_control = true # Bot Control: L7 DDoS + credential-stuffing detection
 
   tags = local.tags
 }
@@ -265,7 +317,7 @@ module "ecr" {
   repositories         = ["frontend", "backend"]
   image_tag_mutability = "IMMUTABLE"
   scan_on_push         = true
-  kms_key_arn          = module.security.kms_key_arns["eks"]
+  kms_key_arn          = module.kms.kms_key_arns["eks"]
   node_role_arn        = module.eks.node_role_arn
   ci_role_arn          = module.cicd.github_actions_role_arn
 
@@ -281,10 +333,10 @@ module "cicd" {
   name_prefix = local.name_prefix
   environment = local.env
 
-  github_org          = var.github_org
-  github_repo         = var.github_repo
-  ecr_repository_arns = values(module.ecr.repository_arns)
-  eks_cluster_name    = module.eks.cluster_name
+  github_org           = var.github_org
+  github_repo          = var.github_repo
+  ecr_repository_arns  = values(module.ecr.repository_arns)
+  eks_cluster_name     = module.eks.cluster_name
   ssm_parameter_prefix = "/${local.name_prefix}"
 
   tags = local.tags
@@ -299,17 +351,17 @@ module "database" {
   name_prefix = local.name_prefix
   environment = local.env
 
-  vpc_id                    = module.vpc.vpc_id
-  isolated_subnet_ids       = module.vpc.isolated_subnet_ids
-  allowed_security_group_id = module.eks.cluster_security_group_id
-  instance_class            = var.db_instance_class
-  instance_count            = 2 # writer + reader in prod
-  master_username           = var.db_master_username
-  master_password           = var.db_master_password
-  backup_retention_days     = 35
-  deletion_protection       = true
+  vpc_id                      = module.vpc.vpc_id
+  isolated_subnet_ids         = module.vpc.isolated_subnet_ids
+  allowed_security_group_id   = module.eks.cluster_security_group_id
+  instance_class              = var.db_instance_class
+  instance_count              = 2 # writer + reader in prod
+  master_username             = var.db_master_username
+  master_password             = var.db_master_password
+  backup_retention_days       = 35
+  deletion_protection         = true
   enable_performance_insights = true
-  kms_key_arn               = module.security.kms_key_arns["rds"]
+  kms_key_arn                 = module.kms.kms_key_arns["rds"]
 
   tags = local.tags
 }
@@ -323,11 +375,11 @@ module "ssm_secrets" {
   name_prefix = local.name_prefix
   environment = local.env
 
-  kms_key_arn = module.security.kms_key_arns["ssm"]
-  oidc_provider_arn = module.eks.oidc_provider_arn
-  oidc_provider_url = module.eks.oidc_provider_url
+  kms_key_arn       = module.kms.kms_key_arns["ssm"]
+  oidc_provider_arn = module.irsa_oidc.oidc_provider_arn
+  oidc_provider_url = module.irsa_oidc.oidc_provider_url
 
-  workload_role_arns  = values(module.security.irsa_role_arns)
+  workload_role_arns  = values(module.irsa_oidc.role_arns)
   enable_write_policy = true
 
   secrets = var.ssm_secrets
@@ -348,11 +400,11 @@ module "blue_green" {
   green_target_group_name = "${local.name_prefix}-tg-green"
   alb_listener_arns       = [module.alb.https_listener_arn]
 
-  traffic_routing_type       = "TimeBasedLinear"
-  traffic_routing_interval   = 5
-  traffic_routing_percentage = 25
+  traffic_routing_type         = "TimeBasedLinear"
+  traffic_routing_interval     = 5
+  traffic_routing_percentage   = 25
   terminate_blue_after_minutes = 5
-  sns_notification_email     = var.notification_email
+  sns_notification_email       = var.notification_email
 
   auto_rollback_alarms = [
     aws_cloudwatch_metric_alarm.error_rate.alarm_name,
@@ -388,7 +440,7 @@ resource "aws_cloudwatch_metric_alarm" "latency" {
   metric_name         = "TargetResponseTime"
   namespace           = "AWS/ApplicationELB"
   period              = 60
-  statistic           = "p99"
+  extended_statistic  = "p99"
   threshold           = 2.0
   alarm_description   = "Triggers rollback if p99 latency > 2s"
 
@@ -414,7 +466,7 @@ module "nlb_internal" {
   db_engine     = var.db_engine
   db_target_ips = var.db_target_ips
 
-  deletion_protection              = true    # prod — protect against accidental destroy
+  deletion_protection              = true # prod — protect against accidental destroy
   enable_cross_zone_load_balancing = true
   access_logs_bucket               = module.s3.logs_bucket_id
   health_check_interval            = 10

@@ -38,9 +38,10 @@ variable "waf_web_acl_arn" {
   default     = null
 }
 variable "origin_secret" {
-  description = "Shared secret injected as X-CloudFront-Secret header on every origin request. Must match the value configured on the ALB listener rule. Retrieve from SSM \u2014 never use a predictable string."
+  description = "Shared secret injected as X-CloudFront-Secret header on every origin request. Must match the value configured on the ALB listener rule. Retrieve from SSM — never use a predictable string. Leave unset (null) to skip origin verification, e.g. in dev/staging."
   type        = string
   sensitive   = true
+  default     = null
 }
 variable "s3_logs_bucket" {
   description = "S3 bucket domain name for CloudFront access logs"

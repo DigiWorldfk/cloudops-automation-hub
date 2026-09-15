@@ -2,6 +2,15 @@
 # Domain — Route53 zone + ACM certificates + DNS records
 ###############################################################################
 
+terraform {
+  required_providers {
+    aws = {
+      source                = "hashicorp/aws"
+      configuration_aliases = [aws.us_east_1]
+    }
+  }
+}
+
 # ── Route53 Hosted Zone ───────────────────────────────────────────────────────
 resource "aws_route53_zone" "main" {
   name = var.domain_name
@@ -59,48 +68,10 @@ resource "aws_acm_certificate_validation" "regional" {
 }
 
 # ── DNS Records ───────────────────────────────────────────────────────────────
-
-# Apex → CloudFront ALIAS
-resource "aws_route53_record" "apex" {
-  zone_id = aws_route53_zone.main.zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = var.cloudfront_domain_name
-    zone_id                = var.cloudfront_hosted_zone_id
-    evaluate_target_health = true
-  }
-}
-
-# www → CloudFront ALIAS
-resource "aws_route53_record" "www" {
-  zone_id = aws_route53_zone.main.zone_id
-  name    = "www.${var.domain_name}"
-  type    = "A"
-
-  alias {
-    name                   = var.cloudfront_domain_name
-    zone_id                = var.cloudfront_hosted_zone_id
-    evaluate_target_health = true
-  }
-}
-
-# api → CloudFront ALIAS (NOT direct-to-ALB — routes through WAF + CloudFront /api/* behavior)
-# The CDN module's /api/* ordered_cache_behavior has TTL=0 (no caching) so API responses
-# pass through immediately. This ensures WAF coverage on the highest-risk surface.
-resource "aws_route53_record" "api" {
-  count   = var.cloudfront_domain_name != null ? 1 : 0
-  zone_id = aws_route53_zone.main.zone_id
-  name    = "api.${var.domain_name}"
-  type    = "A"
-
-  alias {
-    name                   = var.cloudfront_domain_name
-    zone_id                = var.cloudfront_hosted_zone_id
-    evaluate_target_health = true
-  }
-}
+# Apex/www/api ALIAS records to CloudFront are created at the environment root
+# (not here) — they need module.cdn's output, which would otherwise form a
+# domain → cdn → alb → domain cycle since alb and cdn both depend on this
+# module's certificates.
 
 # MX Records
 resource "aws_route53_record" "mx" {

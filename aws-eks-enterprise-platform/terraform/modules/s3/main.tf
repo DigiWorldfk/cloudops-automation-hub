@@ -4,10 +4,10 @@
 
 locals {
   buckets = {
-    state   = { versioning = true,  lifecycle_days = 365, object_lock = true  }
-    data    = { versioning = true,  lifecycle_days = 365, object_lock = false }
-    logs    = { versioning = false, lifecycle_days = var.log_retention_days, object_lock = true  }
-    velero  = { versioning = true,  lifecycle_days = 365, object_lock = false }
+    state  = { versioning = true, lifecycle_days = 365, object_lock = true }
+    data   = { versioning = true, lifecycle_days = 365, object_lock = false }
+    logs   = { versioning = false, lifecycle_days = var.log_retention_days, object_lock = true }
+    velero = { versioning = true, lifecycle_days = 365, object_lock = false }
   }
 }
 
@@ -17,7 +17,7 @@ resource "aws_s3_bucket" "main" {
   force_destroy = var.force_destroy
   # Object Lock requires this to be set at bucket creation; versioning is auto-enabled by Object Lock
   object_lock_enabled = each.value.object_lock
-  tags          = merge(var.tags, { Name = "${var.name_prefix}-${each.key}" })
+  tags                = merge(var.tags, { Name = "${var.name_prefix}-${each.key}" })
 }
 
 resource "aws_s3_bucket_versioning" "main" {
@@ -40,21 +40,6 @@ resource "aws_s3_bucket_object_lock_configuration" "immutable" {
   rule {
     default_retention {
       mode = "COMPLIANCE"
-      days = 365
-    }
-  }
-}
-
-# ── Object Lock (compliance mode on logs + state) ───────────────────────────────────
-# Prevents CloudTrail log and Terraform state tampering, even by root/admin IAM
-resource "aws_s3_bucket_object_lock_configuration" "immutable" {
-  for_each   = toset(["logs", "state"])
-  bucket     = aws_s3_bucket.main[each.key].id
-  depends_on = [aws_s3_bucket_versioning.main]
-
-  rule {
-    default_retention {
-      mode = "COMPLIANCE"  # cannot be overridden even by root — GOVERNANCE would allow root override
       days = 365
     }
   }
@@ -145,15 +130,15 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AWSCloudTrailAclCheck"
-        Effect = "Allow"
+        Sid       = "AWSCloudTrailAclCheck"
+        Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
         Action    = "s3:GetBucketAcl"
         Resource  = aws_s3_bucket.main["logs"].arn
       },
       {
-        Sid    = "AWSCloudTrailWrite"
-        Effect = "Allow"
+        Sid       = "AWSCloudTrailWrite"
+        Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
         Action    = "s3:PutObject"
         Resource  = "${aws_s3_bucket.main["logs"].arn}/AWSLogs/*"

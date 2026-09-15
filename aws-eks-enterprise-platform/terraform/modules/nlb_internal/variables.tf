@@ -69,8 +69,8 @@ variable "db_port" {
     TCP port the database listens on. Defaults to engine default if set to 0:
     5432 for postgres, 3306 for mysql.
   EOT
-  type    = number
-  default = 0
+  type        = number
+  default     = 0
 }
 
 # ── Target Registration ───────────────────────────────────────────────────────
@@ -80,8 +80,8 @@ variable "db_target_ips" {
     Typically: Aurora writer + read-replica IPs, or self-hosted Postgres primaries.
     Example: ["10.20.40.10", "10.20.40.26", "10.20.40.42"]
   EOT
-  type    = list(string)
-  default = []
+  type        = list(string)
+  default     = []
 }
 
 variable "db_target_availability_zones" {
@@ -90,8 +90,8 @@ variable "db_target_availability_zones" {
     in different AZs to enable cross-zone load balancing correctly.
     Leave empty to use "all" (cross-zone LB enabled by default).
   EOT
-  type    = list(string)
-  default = []
+  type        = list(string)
+  default     = []
 }
 
 # ── Load Balancing ────────────────────────────────────────────────────────────

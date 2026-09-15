@@ -2,6 +2,12 @@
 # WAF — AWS WAFv2 Web ACL (CLOUDFRONT or REGIONAL scope)
 ###############################################################################
 
+terraform {
+  required_providers {
+    aws = { source = "hashicorp/aws" }
+  }
+}
+
 locals {
   action_block = var.waf_mode == "BLOCK" ? [{}] : []
   action_count = var.waf_mode == "COUNT" ? [{}] : []
@@ -22,8 +28,14 @@ resource "aws_wafv2_web_acl" "main" {
     priority = 10
 
     override_action {
-      dynamic "none" { for_each = local.action_block; content {} }
-      dynamic "count" { for_each = local.action_count; content {} }
+      dynamic "none" {
+        for_each = local.action_block
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.action_count
+        content {}
+      }
     }
 
     statement {
@@ -44,8 +56,14 @@ resource "aws_wafv2_web_acl" "main" {
     name     = "AWSManagedRulesKnownBadInputsRuleSet"
     priority = 20
     override_action {
-      dynamic "none" { for_each = local.action_block; content {} }
-      dynamic "count" { for_each = local.action_count; content {} }
+      dynamic "none" {
+        for_each = local.action_block
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.action_count
+        content {}
+      }
     }
     statement {
       managed_rule_group_statement {
@@ -65,8 +83,14 @@ resource "aws_wafv2_web_acl" "main" {
     name     = "AWSManagedRulesSQLiRuleSet"
     priority = 30
     override_action {
-      dynamic "none" { for_each = local.action_block; content {} }
-      dynamic "count" { for_each = local.action_count; content {} }
+      dynamic "none" {
+        for_each = local.action_block
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.action_count
+        content {}
+      }
     }
     statement {
       managed_rule_group_statement {
@@ -86,8 +110,14 @@ resource "aws_wafv2_web_acl" "main" {
     name     = "AWSManagedRulesAmazonIpReputationList"
     priority = 40
     override_action {
-      dynamic "none" { for_each = local.action_block; content {} }
-      dynamic "count" { for_each = local.action_count; content {} }
+      dynamic "none" {
+        for_each = local.action_block
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.action_count
+        content {}
+      }
     }
     statement {
       managed_rule_group_statement {
@@ -108,17 +138,23 @@ resource "aws_wafv2_web_acl" "main" {
     priority = 50
 
     action {
-      dynamic "block" { for_each = local.action_block; content {} }
-      dynamic "count" { for_each = local.action_count; content {} }
+      dynamic "block" {
+        for_each = local.action_block
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.action_count
+        content {}
+      }
     }
 
     statement {
       rate_based_statement {
         limit              = var.rate_limit
-        aggregate_key_type = "FORWARDED_IP"  # real client IP from X-Forwarded-For (behind CloudFront)
+        aggregate_key_type = "FORWARDED_IP" # real client IP from X-Forwarded-For (behind CloudFront)
         forwarded_ip_config {
           header_name       = "X-Forwarded-For"
-          fallback_behavior = "MATCH"  # rate-limit if no XFF header (direct hits)
+          fallback_behavior = "MATCH" # rate-limit if no XFF header (direct hits)
         }
       }
     }
@@ -135,8 +171,14 @@ resource "aws_wafv2_web_acl" "main" {
     name     = "AWSManagedRulesLinuxRuleSet"
     priority = 55
     override_action {
-      dynamic "none" { for_each = local.action_block; content {} }
-      dynamic "count" { for_each = local.action_count; content {} }
+      dynamic "none" {
+        for_each = local.action_block
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.action_count
+        content {}
+      }
     }
     statement {
       managed_rule_group_statement {
@@ -157,8 +199,14 @@ resource "aws_wafv2_web_acl" "main" {
     name     = "AWSManagedRulesUnixRuleSet"
     priority = 57
     override_action {
-      dynamic "none" { for_each = local.action_block; content {} }
-      dynamic "count" { for_each = local.action_count; content {} }
+      dynamic "none" {
+        for_each = local.action_block
+        content {}
+      }
+      dynamic "count" {
+        for_each = local.action_count
+        content {}
+      }
     }
     statement {
       managed_rule_group_statement {
@@ -180,11 +228,17 @@ resource "aws_wafv2_web_acl" "main" {
     for_each = var.enable_bot_control ? [1] : []
     content {
       name     = "AWSManagedRulesBotControlRuleSet"
-      priority = 5  # evaluated before all other rules
+      priority = 5 # evaluated before all other rules
 
       override_action {
-        dynamic "none" { for_each = local.action_block; content {} }
-        dynamic "count" { for_each = local.action_count; content {} }
+        dynamic "none" {
+          for_each = local.action_block
+          content {}
+        }
+        dynamic "count" {
+          for_each = local.action_count
+          content {}
+        }
       }
 
       statement {

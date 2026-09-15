@@ -22,11 +22,7 @@ output "node_role_arn" {
 output "node_role_name" {
   value = aws_iam_role.node.name
 }
-output "oidc_provider_arn" {
-  description = "OIDC provider ARN for IRSA"
-  value       = var.enable_irsa ? aws_iam_openid_connect_provider.eks[0].arn : null
-}
-output "oidc_provider_url" {
-  description = "OIDC issuer URL (without https://)"
-  value       = var.enable_irsa ? trimprefix(aws_eks_cluster.main.identity[0].oidc[0].issuer, "https://") : null
+output "oidc_issuer_url" {
+  description = "EKS OIDC issuer URL; consumed by the dedicated IRSA module"
+  value       = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }

@@ -1,6 +1,6 @@
 # 🟠 AWS EKS Enterprise Platform
 
-Production-grade, multi-environment AWS infrastructure built with Terraform — 13 modules, 3 environments (dev/staging/prod), GitHub Actions CI/CD with OIDC auth, ArgoCD GitOps, and OPA/conftest policy gates.
+Production-grade, multi-environment AWS infrastructure built with Terraform — 14 modules, 3 environments (dev/staging/prod), GitHub Actions CI/CD with OIDC auth, ArgoCD GitOps, and OPA/conftest policy gates.
 
 ---
 
@@ -105,12 +105,11 @@ flowchart TD
 
 **Module dependency chain:**
 ```
-s3 + security ──→ vpc ──→ eks ──→ alb ──→ cdn
+s3 + security ──→ vpc ──→ eks ──→ irsa_oidc ──→ ssm_secrets
+                       ↘ alb ──→ cdn
                        ↘ database, ecr, domain, waf
                        ↘ nlb_internal (sits between eks + database)
-                                 ↘ blue_green (wires ALB target groups)
-                   cicd (wires ecr + eks ARNs)
-                   ssm_secrets (wires security KMS + EKS OIDC)
+                   cicd (wires ecr + eks cluster_name)
 ```
 
 ---
@@ -140,8 +139,9 @@ aws-eks-enterprise-platform/
 │   └── modules/                       ← Layer 2 · Reusable child modules
 │       ├── vpc/                         Network foundation — must apply first
 │       ├── s3/                          State buckets — applied before security
-│       ├── security/                    KMS + GuardDuty + IRSA factory
-│       ├── eks/                         Cluster + OIDC provider
+│       ├── security/                    KMS + GuardDuty + Security Hub + CloudTrail
+│       ├── eks/                         Cluster + managed node group (OIDC issuer only)
+│       ├── irsa_oidc/                   IAM OIDC provider + per-service-account IRSA roles
 │       ├── ecr/                         Container registries
 │       ├── alb/                         Load balancer + target groups
 │       ├── cdn/                         CloudFront distribution
@@ -183,16 +183,17 @@ graph TD
         end
 
         subgraph T2["Tier 2 — Compute  (depends on vpc)"]
-            EKS["⚙️ eks\nCluster · OIDC provider\nManaged node group"]
+            EKS["⚙️ eks\nCluster · managed node group\nExposes OIDC issuer URL only"]
         end
 
-        subgraph T3["Tier 3 — Security & Registry  (depends on eks + s3)"]
-            SEC["🔐 security\nKMS ×6 · GuardDuty\nSecurity Hub · CloudTrail\nIRSA role factory"]
+        subgraph T3["Tier 3 — Security, Identity & Registry  (depends on eks + s3)"]
+            SEC["🔐 security\nKMS ×6 · GuardDuty\nSecurity Hub · CloudTrail"]
+            IRSA["🪪 irsa_oidc\nIAM OIDC provider\nPer-service-account IRSA roles"]
             ECR["📦 ecr\nRepositories · KMS\nscan-on-push · lifecycle"]
             CICD["🤖 cicd\nGitHub Actions OIDC role\nECR push · EKS access"]
         end
 
-        subgraph T4["Tier 4 — Ingress & Secrets  (depends on vpc + eks + security)"]
+        subgraph T4["Tier 4 — Ingress & Secrets  (depends on vpc + eks + security + irsa_oidc)"]
             ALB["⚖️ alb\nExternal + internal ALB\nBlue / Green target groups"]
             SSM["🔑 ssm_secrets\nSecureString · KMS\nESO IRSA role"]
             DB["🗄️ database\nAurora PostgreSQL 15\nSecrets Manager · KMS"]
@@ -227,12 +228,13 @@ graph TD
     VPC -->|"vpc_id · public_subnet_ids\nprivate_subnet_ids"| ALB
     VPC -->|"vpc_id · isolated_subnet_ids"| DB
 
-    EKS -->|"oidc_provider_arn\noidc_provider_url"| SEC
+    EKS -->|"oidc_issuer_url"| IRSA
     EKS -->|"node_role_arn"| ECR
-    EKS -->|"cluster_name\noidc_provider_arn"| CICD
+    EKS -->|"cluster_name"| CICD
     EKS -->|"cluster_security_group_id"| DB
-    EKS -->|"cluster_security_group_id\noidc_provider_arn/url"| NLB_INT
-    EKS -->|"oidc_provider_arn/url"| SSM
+    EKS -->|"cluster_security_group_id"| NLB_INT
+
+    IRSA -->|"oidc_provider_arn\noidc_provider_url\nrole_arns"| SSM
 
     NLB_INT -->|"nlb_dns_name\ntarget_group_arn"| DB
 
@@ -240,7 +242,6 @@ graph TD
     SEC -->|"kms_key_arns['eks']"| ECR
     SEC -->|"kms_key_arns['rds']"| DB
     SEC -->|"kms_key_arns['s3']"| S3
-    SEC -->|"irsa_role_arns"| SSM
 
     ECR -->|"repository_arns"| CICD
     ECR -->|"repository_urls → helm/values.yaml"| CDN
@@ -287,17 +288,18 @@ The table below shows exactly which module outputs are consumed as inputs by oth
 | `vpc` | `private_subnet_ids` | `eks`, `alb` | `private_subnet_ids` |
 | `vpc` | `public_subnet_ids` | `alb` | `public_subnet_ids` |
 | `vpc` | `isolated_subnet_ids` | `database` | `isolated_subnet_ids` |
-| `eks` | `oidc_provider_arn` | `security`, `ssm_secrets` | `oidc_provider_arn` |
-| `eks` | `oidc_provider_url` | `security`, `ssm_secrets` | `oidc_provider_url` |
+| `eks` | `oidc_issuer_url` | `irsa_oidc` | `oidc_issuer_url` |
 | `eks` | `node_role_arn` | `ecr` | `node_role_arn` |
 | `eks` | `node_role_name` | `ecr` | — (via `node_role_arn`) |
 | `eks` | `cluster_name` | `cicd` | `eks_cluster_name` |
 | `eks` | `cluster_security_group_id` | `database` | `allowed_security_group_id` |
+| `irsa_oidc` | `oidc_provider_arn` | `ssm_secrets` | `oidc_provider_arn` |
+| `irsa_oidc` | `oidc_provider_url` | `ssm_secrets` | `oidc_provider_url` |
+| `irsa_oidc` | `role_arns` | `ssm_secrets` | `workload_role_arns` |
 | `security` | `kms_key_arns["eks"]` | `ecr` | `kms_key_arn` |
 | `security` | `kms_key_arns["rds"]` | `database` | `kms_key_arn` |
 | `security` | `kms_key_arns["s3"]` | `s3` | `kms_key_arn` |
 | `security` | `kms_key_arns["ssm"]` | `ssm_secrets` | `kms_key_arn` |
-| `security` | `irsa_role_arns` | `ssm_secrets` | `workload_role_arns` |
 | `ecr` | `repository_arns` (all) | `cicd` | `ecr_repository_arns` |
 | `ecr` | `github_actions_role_arn` | `ecr` | `ci_role_arn` |
 | `cicd` | `github_actions_role_arn` | `ecr` | `ci_role_arn` |
@@ -360,8 +362,9 @@ Each environment is a **separate Terraform state** — a prod failure cannot cor
 | `cdn` | CloudFront distribution, static/API cache behaviors, custom error pages, geo-restriction, **response headers security policy** (HSTS · X-Frame-Options · nosniff · Referrer-Policy · Permissions-Policy) |
 | `waf` | WAFv2 (CLOUDFRONT + REGIONAL scope), managed rule groups (Common · KnownBadInputs · SQLi · IP Reputation · **Linux** · **Unix**), **Bot Control**, rate-limit via **FORWARDED_IP** (real client IP behind CloudFront), geo-block |
 | `domain` | Route53 zone, ACM certs (CloudFront + regional), ALIAS/CNAME/MX/SPF/DMARC records, **`api.domain.com` routes through CloudFront** (WAF coverage on API tier) |
-| `eks` | EKS managed cluster, IRSA/OIDC, **Pod Identity addon**, managed node group (SPOT dev, ON_DEMAND prod), core add-ons (`PRESERVE` mode), **etcd Secrets encrypted at rest via KMS** |
-| `security` | KMS keys (6 services, **hardened policy**, **multi-region on rds+secrets**), GuardDuty (**S3 export + SNS HIGH-severity alerts**), Security Hub (**CIS v1.4** + AWS Foundational), CloudTrail, IRSA role factory |
+| `eks` | EKS managed cluster, **Pod Identity addon**, managed node group (SPOT dev, ON_DEMAND prod), core add-ons (`PRESERVE` mode), **etcd Secrets encrypted at rest via KMS**; exposes only the cluster OIDC issuer URL |
+| `irsa_oidc` | Owns the IAM OIDC identity provider for the cluster and creates one narrowly-scoped IAM role per Kubernetes service account (IRSA) — `sts:AssumeRoleWithWebIdentity` trust is conditioned on the exact `namespace:service_account` subject |
+| `security` | KMS keys (6 services, **hardened policy**, **multi-region on rds+secrets**), GuardDuty (**S3 export + SNS HIGH-severity alerts**), Security Hub (**CIS v1.4** + AWS Foundational), CloudTrail |
 | `ecr` | ECR repositories, lifecycle policies, KMS encryption, scan-on-push, node/CI IAM policies |
 | `cicd` | GitHub Actions OIDC IAM role — no long-lived keys; ECR push, EKS access, SSM write |
 | `blue_green` | CodeDeploy blue/green with ALB traffic shifting, SNS notifications, CloudWatch rollback alarms |
@@ -434,6 +437,53 @@ Or via CI — push to `develop` for dev auto-apply, push to `main` for staging (
 
 ---
 
+## IAM Roles for Service Accounts (IRSA)
+
+The `irsa_oidc` module (`terraform/modules/irsa_oidc/`) is the single owner of:
+
+- The **IAM OIDC identity provider** registered against the EKS cluster's OIDC issuer (`module.eks.oidc_issuer_url`) — this is the trust anchor that lets `sts:AssumeRoleWithWebIdentity` validate tokens the cluster issues to pods.
+- One **IAM role per Kubernetes service account**, defined via the `service_accounts` input map. Each role's trust policy is conditioned on the exact `<oidc_provider_url>:sub = system:serviceaccount:<namespace>:<service_account>` claim, so only that specific service account can assume it — never the whole cluster.
+
+This module is intentionally separate from `eks` and `security`:
+
+- `eks` only exposes `oidc_issuer_url` — it does not own any IAM OIDC provider or workload role.
+- `security` only owns KMS/GuardDuty/Security Hub/CloudTrail — it no longer creates IRSA roles. This also removes a real dependency cycle that existed in `prod` (`eks` needed `security`'s KMS key, while `security` needed `eks`'s OIDC output).
+- `ssm_secrets` consumes `irsa_oidc`'s `oidc_provider_arn` / `oidc_provider_url` to create its own dedicated External Secrets Operator (ESO) role, and consumes `role_arns` to grant SSM read access to every workload role.
+
+**Adding a new IRSA role** — add an entry to the `service_accounts` map on the `irsa_oidc` module block in the target `environments/<env>/main.tf`:
+
+```hcl
+service_accounts = {
+  backend = {
+    namespace       = "backend"
+    service_account = "backend-sa"
+    policy_json     = jsonencode({ ... least-privilege policy ... })
+  }
+  # new-workload = { namespace = "...", service_account = "...", policy_json = jsonencode({...}) }
+}
+```
+
+Then annotate the matching Kubernetes `ServiceAccount` with the resulting role ARN:
+
+```bash
+terraform output -json irsa_role_arns
+# → { "backend": "arn:aws:iam::<account>:role/eks-enterprise-<env>-irsa-backend", ... }
+```
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: backend
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::<account>:role/eks-enterprise-<env>-irsa-backend"
+```
+
+See `kubernetes/rbac/service-accounts.yaml` for the checked-in template (`REPLACE_WITH_BACKEND_IRSA_ROLE_ARN` placeholder) and `kubernetes/secrets/cluster-secret-store.yaml` for the equivalent ESO service account.
+
+---
+
 ## SSM Secrets
 
 Secrets are stored at `/${name_prefix}/${environment}/<name>` as `SecureString` encrypted with a dedicated KMS key.
@@ -460,9 +510,10 @@ Inject via CI (`TF_VAR_ssm_secrets` JSON):
 1. **Set Route53 nameservers** at your domain registrar: `terraform output name_servers`
 2. **Confirm GuardDuty SNS subscription** — AWS sends a confirmation email to `TF_VAR_security_alert_email`; click the link to activate HIGH-severity alerts
 3. **Generate and set CloudFront origin secret**: `openssl rand -hex 32` → set as `TF_VAR_cloudfront_origin_secret` CI secret and in each env `terraform.tfvars`
-4. **Update ESO role ARN** in `kubernetes/secrets/cluster-secret-store.yaml`: `terraform output -module=ssm_secrets eso_role_arn`
-5. **Add GitHub Environments** (dev/staging/production) with reviewer gates in repo Settings → Environments
-6. **Set `customer_gateway_ip`** in prod `terraform.tfvars` for Site-to-Site VPN
+4. **Update ESO role ARN** in `kubernetes/secrets/cluster-secret-store.yaml`: `terraform output eso_role_arn`
+5. **Update backend-sa role ARN** in `kubernetes/rbac/service-accounts.yaml`: `terraform output -json irsa_role_arns` → copy the `backend` value
+6. **Add GitHub Environments** (dev/staging/production) with reviewer gates in repo Settings → Environments
+7. **Set `customer_gateway_ip`** in prod `terraform.tfvars` for Site-to-Site VPN
 
 ---
 
