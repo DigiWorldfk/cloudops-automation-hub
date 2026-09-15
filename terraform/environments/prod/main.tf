@@ -103,6 +103,7 @@ module "aks" {
   min_node_count     = var.aks_min_node_count
   max_node_count     = var.aks_max_node_count
   kubernetes_version = var.kubernetes_version
+  api_server_authorized_ip_ranges = var.api_server_authorized_ip_ranges
 
   tags = local.tags
 }
