@@ -4,9 +4,9 @@ locals {
     for cidr in var.api_server_authorized_ip_ranges : trimspace(cidr)
   ]
   api_server_authorized_ip_ranges = var.environment == "prod" ? coalescelist(
-    var.api_server_authorized_ip_ranges,
+    local.normalized_api_server_authorized_ip_ranges,
     local.scan_only_api_server_authorized_ip_ranges
-  ) : var.api_server_authorized_ip_ranges
+  ) : local.normalized_api_server_authorized_ip_ranges
 }
 
 resource "azurerm_kubernetes_cluster" "main" {
